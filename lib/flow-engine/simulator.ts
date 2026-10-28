@@ -5,6 +5,7 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
+import { findBranchEdge } from "./handles";
 
 // --- Types ---
 
@@ -266,10 +267,10 @@ export function simulateFlow(
               (c) => `${c.field} ${c.operator} "${c.value}"`
             ),
             result: passed,
-            path: passed ? "true" : "false",
+            path: passed ? "yes" : "no",
           },
         });
-        nextHandle = passed ? "true" : "false";
+        nextHandle = passed ? "yes" : "no";
         break;
       }
 
@@ -362,14 +363,15 @@ export function simulateFlow(
           const totalWeight = paths.reduce((s, p) => s + p.weight, 0);
           const random = Math.random() * totalWeight;
           let cumulative = 0;
-          let selected = paths[0];
-          for (const p of paths) {
-            cumulative += p.weight;
+          let selectedIndex = 0;
+          for (let i = 0; i < paths.length; i++) {
+            cumulative += paths[i].weight;
             if (random <= cumulative) {
-              selected = p;
+              selectedIndex = i;
               break;
             }
           }
+          const selected = paths[selectedIndex];
           steps.push({
             nodeId: node.id,
             nodeType: "abSplit",
@@ -380,7 +382,7 @@ export function simulateFlow(
               weight: selected.weight,
             },
           });
-          nextHandle = selected.name;
+          nextHandle = `split-${selectedIndex}`;
         }
         break;
       }
@@ -493,8 +495,11 @@ export function simulateFlow(
     // Find next edge
     let nextEdge: Edge | undefined;
     if (nextHandle) {
-      nextEdge = edges.find(
-        (e) => e.source === node.id && e.sourceHandle === nextHandle
+      nextEdge = findBranchEdge(
+        edges,
+        node.id,
+        nextHandle,
+        (node.data as { paths?: Array<{ name: string }> } | undefined)?.paths
       );
     }
     if (!nextEdge) {

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, Json } from "@/lib/types/database";
+import type { Database, Json, NodeType } from "@/lib/types/database";
 import type {
   FlowNode,
   FlowEdge,
@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import { executeAiResponse } from "./nodes/ai-response";
 import { adaptMessage } from "./platform-adapter";
+import { findBranchEdge } from "./handles";
 import { createReplizClient } from "@/lib/repliz-client";
 import { buildReplizMessages } from "@/lib/repliz-message";
 
@@ -304,9 +305,8 @@ async function traverseNodes(
   if (result && typeof result === "string" && result.startsWith("handle:")) {
     // Condition/split nodes specify which handle to follow
     const handle = result.replace("handle:", "");
-    nextEdge = edges.find(
-      (e) => e.source === node.id && e.sourceHandle === handle
-    );
+    const paths = (node.data as ABSplitNodeData)?.paths;
+    nextEdge = findBranchEdge(edges, node.id, handle, paths);
   } else {
     nextEdge = edges.find((e) => e.source === node.id);
   }
@@ -332,7 +332,19 @@ async function executeNode(
   context: FlowExecutionContext,
   sessionId: string
 ): Promise<string | void> {
-  switch (node.type) {
+  // A node dragged from the palette is stored as `type: "action"` and carries
+  // the concrete action in data.actionType — that is the shape the canvas
+  // renders and the simulator understands. Graphs seeded before that (and some
+  // templates) store the action type directly. Resolve both to one switch, or
+  // every palette node silently falls through to the default and does nothing.
+  const nodeType: NodeType | undefined =
+    (node.type as string) === "action"
+      ? ((node.data as { actionType?: NodeType }).actionType as NodeType | undefined)
+      : node.type;
+
+  if (!nodeType) return;
+
+  switch (nodeType) {
     case "sendMessage":
       return executeSendMessage(supabase, node.data as SendMessageNodeData, context);
     case "condition":
@@ -352,7 +364,7 @@ async function executeNode(
       return executeHumanTakeover(supabase, context, sessionId);
     case "subscribe":
     case "unsubscribe":
-      return executeSubscription(supabase, node.type, context);
+      return executeSubscription(supabase, nodeType, context);
     case "commentReply":
       return executeCommentReply(supabase, node.data as CommentReplyNodeData, context);
     case "privateReply":
@@ -587,7 +599,7 @@ async function executeCondition(
     .eq("id", context.contactId)
     .single();
 
-  if (!contact) return "handle:false";
+  if (!contact) return "handle:no";
 
   const results = data.conditions.map((condition) => {
     let fieldValue: string | undefined;
@@ -625,7 +637,7 @@ async function executeCondition(
   const passed =
     data.logic === "and" ? results.every(Boolean) : results.some(Boolean);
 
-  return passed ? "handle:true" : "handle:false";
+  return passed ? "handle:yes" : "handle:no";
 }
 
 function evaluateCondition(
@@ -848,11 +860,13 @@ function executeABSplit(data: ABSplitNodeData): string {
   for (let i = 0; i < data.paths.length; i++) {
     cumulative += data.paths[i].weight;
     if (random <= cumulative) {
-      return `handle:${data.paths[i].name}`;
+      // The canvas keys a split branch by index, so renaming a path cannot
+      // orphan its edge.
+      return `handle:split-${i}`;
     }
   }
 
-  return `handle:${data.paths[0].name}`;
+  return "handle:split-0";
 }
 
 /**

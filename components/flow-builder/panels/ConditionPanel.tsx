@@ -22,13 +22,45 @@ interface ConditionPanelProps {
 }
 
 const fieldOptions = [
+  { value: "platform", label: "Platform" },
+  { value: "is_subscribed", label: "Is Subscribed" },
   { value: "tag", label: "Tag" },
   { value: "custom_field", label: "Custom Field" },
-  { value: "platform", label: "Platform" },
   { value: "variable", label: "Variable" },
-  { value: "is_subscribed", label: "Is Subscribed" },
-  { value: "last_interaction", label: "Last Interaction" },
 ];
+
+/**
+ * The engine keys a condition by one string: `platform`, `is_subscribed`,
+ * `tag:<name>`, `variable:<name>`, or a custom field slug. The panel edits the
+ * two halves separately so the tag or variable name cannot end up in the value
+ * box, which used to make the condition compare against nothing.
+ */
+function parseField(field: string): { kind: string; name: string } {
+  if (field.startsWith("tag:")) return { kind: "tag", name: field.slice(4) };
+  if (field.startsWith("variable:")) {
+    return { kind: "variable", name: field.slice("variable:".length) };
+  }
+  if (field === "platform" || field === "is_subscribed") {
+    return { kind: field, name: "" };
+  }
+  if (!field) return { kind: "platform", name: "" };
+  // Anything else is a custom field slug.
+  return { kind: "custom_field", name: field };
+}
+
+function buildField(kind: string, name: string): string {
+  const trimmed = name.trim();
+  if (kind === "tag") return `tag:${trimmed}`;
+  if (kind === "variable") return `variable:${trimmed}`;
+  if (kind === "custom_field") return trimmed;
+  return kind;
+}
+
+const namePlaceholders: Record<string, string> = {
+  tag: "Tag name",
+  variable: "Variable name",
+  custom_field: "Field slug",
+};
 
 const operatorOptions = [
   { value: "equals", label: "equals" },
@@ -47,7 +79,7 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
   const addCondition = useCallback(() => {
     onChange({
       ...data,
-      conditions: [...conditions, { field: "tag", operator: "equals", value: "" }],
+      conditions: [...conditions, { field: "platform", operator: "equals", value: "" }],
     });
   }, [data, conditions, onChange]);
 
@@ -95,83 +127,107 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
 
       {/* Conditions List */}
       <div className="space-y-3">
-        {conditions.map((condition, index) => (
-          <div key={index}>
-            {index > 0 && (
-              <div className="my-2 flex items-center justify-center">
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
-                    logic === "and"
-                      ? "bg-amber-100 text-amber-600"
-                      : "bg-blue-100 text-blue-600"
-                  )}
-                >
-                  {logic}
-                </span>
-              </div>
-            )}
-            <div className="rounded-lg border border-border bg-card p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-medium text-muted-foreground">
-                  Condition {index + 1}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeCondition(index)}
-                  className="rounded p-1 text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
+        {conditions.map((condition, index) => {
+          const { kind, name } = parseField(condition.field);
+          const needsName =
+            kind === "tag" || kind === "variable" || kind === "custom_field";
 
-              {/* Field */}
-              <div className="space-y-2">
-                <select
-                  value={condition.field}
-                  onChange={(e) =>
-                    updateCondition(index, { ...condition, field: e.target.value })
-                  }
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                >
-                  {fieldOptions.map((f) => (
-                    <option key={f.value} value={f.value}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
+          return (
+            <div key={index}>
+              {index > 0 && (
+                <div className="my-2 flex items-center justify-center">
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                      logic === "and"
+                        ? "bg-amber-100 text-amber-600"
+                        : "bg-blue-100 text-blue-600"
+                    )}
+                  >
+                    {logic}
+                  </span>
+                </div>
+              )}
+              <div className="rounded-lg border border-border bg-card p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Condition {index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeCondition(index)}
+                    className="rounded p-1 text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
 
-                {/* Operator */}
-                <select
-                  value={condition.operator}
-                  onChange={(e) =>
-                    updateCondition(index, { ...condition, operator: e.target.value })
-                  }
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                >
-                  {operatorOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-
-                {/* Value (hidden for "exists" operator) */}
-                {condition.operator !== "exists" && (
-                  <input
-                    type="text"
-                    value={condition.value}
+                {/* Field */}
+                <div className="space-y-2">
+                  <select
+                    value={kind}
                     onChange={(e) =>
-                      updateCondition(index, { ...condition, value: e.target.value })
+                      updateCondition(index, {
+                        ...condition,
+                        field: buildField(e.target.value, name),
+                      })
                     }
-                    placeholder="Value..."
-                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                )}
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    {fieldOptions.map((f) => (
+                      <option key={f.value} value={f.value}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  {needsName && (
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) =>
+                        updateCondition(index, {
+                          ...condition,
+                          field: buildField(kind, e.target.value),
+                        })
+                      }
+                      placeholder={namePlaceholders[kind]}
+                      className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  )}
+
+                  {/* Operator */}
+                  <select
+                    value={condition.operator}
+                    onChange={(e) =>
+                      updateCondition(index, { ...condition, operator: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    {operatorOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Value (hidden for "exists" operator) */}
+                  {condition.operator !== "exists" && (
+                    <input
+                      type="text"
+                      value={condition.value}
+                      onChange={(e) =>
+                        updateCondition(index, { ...condition, value: e.target.value })
+                      }
+                      placeholder="Value..."
+                      className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Add Condition */}
