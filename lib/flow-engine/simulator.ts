@@ -197,7 +197,16 @@ export function simulateFlow(
     let nextHandle: string | undefined;
     let shouldPause = false;
 
-    switch (node.type) {
+    // A palette node is stored as type "action" with the real action in
+    // data.actionType. Switching on node.type alone sent every one of them into
+    // the generic branch, so an AB split never branched and a smart delay never
+    // paused — the preview drew a straight line through the flow.
+    const effectiveType =
+      node.type === "action" && typeof data.actionType === "string"
+        ? (data.actionType as string)
+        : node.type;
+
+    switch (effectiveType) {
       case "sendMessage": {
         const messages = (data.messages as Array<{ type?: string; text?: string; imageUrl?: string }>) || [];
         const texts = messages
@@ -289,41 +298,18 @@ export function simulateFlow(
       case "addTag":
       case "removeTag": {
         const tagName = (data.tagName as string) || "unknown";
-        const actionType =
-          node.type === "addTag"
-            ? "addTag"
-            : (data.actionType as string) || node.type;
         steps.push({
           nodeId: node.id,
-          nodeType: node.type,
+          nodeType: effectiveType,
           nodeLabel: label,
           result: {
             type: "action",
-            actionType,
+            actionType: effectiveType,
             detail:
-              actionType === "addTag" || actionType === "add"
+              effectiveType === "addTag"
                 ? `Add tag: ${tagName}`
                 : `Remove tag: ${tagName}`,
           },
-        });
-        break;
-      }
-
-      case "action": {
-        const actionType = (data.actionType as string) || "unknown";
-        const tagName = (data.tagName as string) || "";
-        const fieldSlug = (data.fieldSlug as string) || "";
-        const fieldValue = (data.value as string) || "";
-        let detail = actionType;
-        if (actionType === "addTag") detail = `Add tag: ${tagName}`;
-        else if (actionType === "removeTag") detail = `Remove tag: ${tagName}`;
-        else if (actionType === "setCustomField")
-          detail = `Set ${fieldSlug} = ${fieldValue}`;
-        steps.push({
-          nodeId: node.id,
-          nodeType: "action",
-          nodeLabel: label,
-          result: { type: "action", actionType, detail },
         });
         break;
       }
@@ -436,9 +422,9 @@ export function simulateFlow(
       case "unsubscribe": {
         steps.push({
           nodeId: node.id,
-          nodeType: node.type,
+          nodeType: effectiveType,
           nodeLabel: label,
-          result: { type: node.type as "subscribe" | "unsubscribe" },
+          result: { type: effectiveType as "subscribe" | "unsubscribe" },
         });
         break;
       }
@@ -478,6 +464,22 @@ export function simulateFlow(
       }
 
       default: {
+        // An action the simulator has no semantics for still deserves a step, so
+        // the preview shows it instead of an error.
+        if (node.type === "action") {
+          steps.push({
+            nodeId: node.id,
+            nodeType: "action",
+            nodeLabel: label,
+            result: {
+              type: "action",
+              actionType: effectiveType ?? "action",
+              detail: effectiveType ?? "action",
+            },
+          });
+          break;
+        }
+
         steps.push({
           nodeId: node.id,
           nodeType: node.type || "unknown",

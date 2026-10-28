@@ -353,7 +353,7 @@ async function executeNode(
       return executeDelay(supabase, node.data as DelayNodeData, sessionId, node.id, context);
     case "addTag":
     case "removeTag":
-      return executeTag(supabase, node.data as TagNodeData, context);
+      return executeTag(supabase, node.data as TagNodeData, context, nodeType);
     case "setCustomField":
       return executeSetField(supabase, node.data as SetFieldNodeData, context);
     case "httpRequest":
@@ -713,7 +713,8 @@ async function executeDelay(
 async function executeTag(
   supabase: SupabaseClient<Database>,
   data: TagNodeData,
-  context: FlowExecutionContext
+  context: FlowExecutionContext,
+  nodeType: NodeType
 ) {
   // Find or create tag
   const { data: tag } = await supabase
@@ -727,7 +728,12 @@ async function executeTag(
 
   if (!tag) return;
 
-  if (data.action === "add") {
+  // The action panel only ever writes `actionType` ("addTag" / "removeTag"), never
+  // `action`. Reading data.action alone meant every add fell into the remove
+  // branch: the tag row was created, then immediately detached from the contact.
+  const action = data.action ?? (nodeType === "removeTag" ? "remove" : "add");
+
+  if (action === "add") {
     await supabase
       .from("contact_tags")
       .upsert({ contact_id: context.contactId, tag_id: tag.id })
