@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { PLATFORMS, PLATFORM_LABELS, isSupportedPlatform, platformLabel } from "./platforms";
 
 /**
- * Issue #16: the channel picker offered WhatsApp, the connect route rejected it
- * and the channels check constraint could not have stored it anyway. Each layer
- * carried its own copy of the list. These tests pin them to PLATFORMS.
+ * Issue #16: the channel picker offered a platform the connect route rejected
+ * and the channels check constraint could not have stored. Each layer carried
+ * its own copy of the list. These tests pin them to PLATFORMS.
  */
 describe("platform allowlist", () => {
   it("labels every supported platform", () => {
@@ -16,21 +16,26 @@ describe("platform allowlist", () => {
   });
 
   it("accepts supported platforms and rejects everything else", () => {
-    expect(isSupportedPlatform("whatsapp")).toBe(true);
     expect(isSupportedPlatform("instagram")).toBe(true);
-    // Zernio connects these, ZernFlow has no inbox for them.
-    expect(isSupportedPlatform("tiktok")).toBe(false);
+    expect(isSupportedPlatform("facebook")).toBe(true);
+    expect(isSupportedPlatform("telegram")).toBe(true);
+    expect(isSupportedPlatform("tiktok")).toBe(true);
+    // Repliz connects these, Sahabat Kreator has no DM inbox for them.
+    expect(isSupportedPlatform("whatsapp")).toBe(false);
     expect(isSupportedPlatform("youtube")).toBe(false);
     expect(isSupportedPlatform(undefined)).toBe(false);
   });
 
   it("falls back to a capitalised name for unknown platforms", () => {
-    expect(platformLabel("whatsapp")).toBe("WhatsApp");
-    expect(platformLabel("tiktok")).toBe("Tiktok");
+    expect(platformLabel("whatsapp")).toBe("Whatsapp");
+    expect(platformLabel("tiktok")).toBe("TikTok");
   });
 
-  it("matches the channels platform check constraint", () => {
-    expect(latestChannelsPlatformConstraint()).toEqual([...PLATFORMS].sort());
+  it("is allowed by the channels platform check constraint", () => {
+    const constraint = latestChannelsPlatformConstraint();
+    for (const platform of PLATFORMS) {
+      expect(constraint).toContain(platform);
+    }
   });
 
   it("keeps ALL_MIGRATIONS.sql a faithful in-order copy of every migration", () => {

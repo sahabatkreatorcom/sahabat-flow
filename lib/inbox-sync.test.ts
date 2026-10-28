@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Zernio } from "./zernio-client";
+import type { ReplizClient } from "./repliz-client";
 import { backfillInboxConversations } from "./inbox-sync";
 
 interface CapturedRow {
@@ -11,7 +11,7 @@ interface CapturedRow {
 
 /**
  * Fake Supabase client covering the query shapes used by the backfill:
- * conversations select (known late_conversation_ids), contact_channels lookup,
+ * conversations select (known repliz_chat_ids), contact_channels lookup,
  * contact insert/update, and the conversations upsert.
  */
 function makeFakeSupabase(seed: {
@@ -55,7 +55,7 @@ function makeFakeSupabase(seed: {
           const data =
             table === "conversations"
               ? (seed.existingConversationIds ?? []).map((id) => ({
-                  late_conversation_id: id,
+                  repliz_chat_id: id,
                 }))
               : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
@@ -90,7 +90,7 @@ function makeFakeSupabase(seed: {
           return {
             select: () =>
               Promise.resolve({
-                data: conflicted ? [] : [{ id: `conv-${row.late_conversation_id}` }],
+                data: conflicted ? [] : [{ id: `conv-${row.repliz_chat_id}` }],
                 error: null,
               }),
           };
@@ -104,54 +104,54 @@ function makeFakeSupabase(seed: {
 }
 
 interface FakePage {
-  data: Array<Record<string, unknown>>;
-  pagination?: { hasMore?: boolean; nextCursor?: string | null };
+  docs: Array<Record<string, unknown>>;
+  hasNextPage?: boolean;
 }
 
-/** Fake Zernio client returning one prepared page per listInboxConversations call. */
-function fakeZernio(pages: FakePage[]) {
+/** Fake Repliz client returning one prepared page per chats.list call. */
+function fakeRepliz(pages: FakePage[]) {
   let call = 0;
   const list = vi.fn().mockImplementation(() => {
     const page = pages[Math.min(call, pages.length - 1)];
     call++;
-    return Promise.resolve({ data: page });
+    return Promise.resolve(page);
   });
   return {
-    client: { messages: { listInboxConversations: list } } as unknown as Zernio,
+    client: { chats: { list } } as unknown as ReplizClient,
     list,
   };
 }
 
-const channel = { id: "ch-1", late_account_id: "acc-1", platform: "instagram" };
+const channel = { id: "ch-1", repliz_account_id: "acc-1", platform: "instagram" };
 
-const conv = (id: string, extra: Record<string, unknown> = {}) => ({
-  id,
-  participantId: `sender-${id}`,
-  participantName: `Sender ${id}`,
-  participantPicture: null,
-  lastMessage: `hello from ${id}`,
-  updatedTime: "2026-07-01T10:00:00.000Z",
+const chat = (id: string, extra: Record<string, unknown> = {}) => ({
+  _id: id,
+  senderId: `sender-${id}`,
+  senderName: `Sender ${id}`,
+  senderPicture: null,
+  updatedAt: "2026-07-01T10:00:00.000Z",
   unreadCount: 2,
+  lastMessage: { text: `hello from ${id}`, type: "text" },
   ...extra,
 });
 
 describe("backfillInboxConversations", () => {
   it("imports missing conversations with contact + conversation rows", async () => {
     const fake = makeFakeSupabase({});
-    const z = fakeZernio([
-      { data: [conv("c1"), conv("c2")], pagination: { hasMore: false } },
-    ]);
+    const z = fakeRepliz([{ docs: [chat("c1"), chat("c2")], hasNextPage: false }]);
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
 
     expect(res.imported).toBe(2);
     expect(z.list).toHaveBeenCalledWith({
-      query: { accountId: "acc-1", limit: 50, sortOrder: "desc", cursor: undefined },
+      accountId: "acc-1",
+      page: 1,
+      limit: 50,
     });
 
     const contactInserts = fake.inserts.filter((i) => i.table === "contacts");
@@ -179,7 +179,7 @@ describe("backfillInboxConversations", () => {
         workspace_id: "ws-1",
         channel_id: "ch-1",
         platform: "instagram",
-        late_conversation_id: "c1",
+        repliz_chat_id: "c1",
         status: "open",
         last_message_at: "2026-07-01T10:00:00.000Z",
         last_message_preview: "hello from c1",
@@ -189,52 +189,46 @@ describe("backfillInboxConversations", () => {
     });
   });
 
-  it("imports archived Zernio conversations as closed, not open", async () => {
+  it("uses the message type when the last message has no text", async () => {
     const fake = makeFakeSupabase({});
-    const z = fakeZernio([
+    const z = fakeRepliz([
       {
-        data: [conv("c1", { status: "archived" }), conv("c2", { status: "active" })],
-        pagination: { hasMore: false },
+        docs: [chat("c1", { lastMessage: { type: "image" } })],
+        hasNextPage: false,
       },
     ]);
 
-    const res = await backfillInboxConversations({
+    await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
 
-    expect(res.imported).toBe(2);
     expect(fake.upserts[0].row).toMatchObject({
-      late_conversation_id: "c1",
-      status: "closed",
-    });
-    expect(fake.upserts[1].row).toMatchObject({
-      late_conversation_id: "c2",
-      status: "open",
+      last_message_preview: "[image]",
     });
   });
 
   it("keeps only the most recent conversation per contact within a run", async () => {
     const fake = makeFakeSupabase({});
-    const z = fakeZernio([
+    const z = fakeRepliz([
       {
-        data: [conv("c1"), conv("c2", { participantId: "sender-c1" })],
-        pagination: { hasMore: false },
+        docs: [chat("c1"), chat("c2", { senderId: "sender-c1" })],
+        hasNextPage: false,
       },
     ]);
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
 
     expect(res.imported).toBe(1);
     expect(fake.upserts).toHaveLength(1);
-    expect(fake.upserts[0].row).toMatchObject({ late_conversation_id: "c1" });
+    expect(fake.upserts[0].row).toMatchObject({ repliz_chat_id: "c1" });
     expect(fake.inserts.filter((i) => i.table === "contacts")).toHaveLength(1);
   });
 
@@ -244,11 +238,11 @@ describe("backfillInboxConversations", () => {
       contactChannelBySender: { "sender-c1": "contact-existing" },
       conversationContactIds: ["contact-existing"],
     });
-    const z = fakeZernio([{ data: [conv("c1")], pagination: { hasMore: false } }]);
+    const z = fakeRepliz([{ docs: [chat("c1")], hasNextPage: false }]);
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
@@ -261,31 +255,29 @@ describe("backfillInboxConversations", () => {
 
   it("skips conversations already present locally (insert-only backfill)", async () => {
     const fake = makeFakeSupabase({ existingConversationIds: ["c1"] });
-    const z = fakeZernio([
-      { data: [conv("c1"), conv("c2")], pagination: { hasMore: false } },
-    ]);
+    const z = fakeRepliz([{ docs: [chat("c1"), chat("c2")], hasNextPage: false }]);
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
 
     expect(res.imported).toBe(1);
     expect(fake.upserts).toHaveLength(1);
-    expect(fake.upserts[0].row).toMatchObject({ late_conversation_id: "c2" });
+    expect(fake.upserts[0].row).toMatchObject({ repliz_chat_id: "c2" });
   });
 
   it("reuses an existing contact via contact_channels instead of creating one", async () => {
     const fake = makeFakeSupabase({
       contactChannelBySender: { "sender-c1": "contact-existing" },
     });
-    const z = fakeZernio([{ data: [conv("c1")], pagination: { hasMore: false } }]);
+    const z = fakeRepliz([{ docs: [chat("c1")], hasNextPage: false }]);
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
@@ -300,16 +292,16 @@ describe("backfillInboxConversations", () => {
     expect(fake.upserts[0].row).toMatchObject({ contact_id: "contact-existing" });
   });
 
-  it("follows nextCursor while hasMore and stops when hasMore is false", async () => {
+  it("follows hasNextPage and stops when it is false", async () => {
     const fake = makeFakeSupabase({});
-    const z = fakeZernio([
-      { data: [conv("c1")], pagination: { hasMore: true, nextCursor: "cur-2" } },
-      { data: [conv("c2")], pagination: { hasMore: false, nextCursor: null } },
+    const z = fakeRepliz([
+      { docs: [chat("c1")], hasNextPage: true },
+      { docs: [chat("c2")], hasNextPage: false },
     ]);
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
@@ -317,19 +309,19 @@ describe("backfillInboxConversations", () => {
     expect(res.imported).toBe(2);
     expect(z.list).toHaveBeenCalledTimes(2);
     expect(z.list).toHaveBeenNthCalledWith(2, {
-      query: { accountId: "acc-1", limit: 50, sortOrder: "desc", cursor: "cur-2" },
+      accountId: "acc-1",
+      page: 2,
+      limit: 50,
     });
   });
 
   it("hard-caps pagination at 4 pages per channel", async () => {
     const fake = makeFakeSupabase({});
-    const z = fakeZernio([
-      { data: [conv("c1")], pagination: { hasMore: true, nextCursor: "next" } },
-    ]);
+    const z = fakeRepliz([{ docs: [chat("c1")], hasNextPage: true }]);
 
     await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
@@ -337,18 +329,18 @@ describe("backfillInboxConversations", () => {
     expect(z.list).toHaveBeenCalledTimes(4);
   });
 
-  it("skips items without an id or participantId", async () => {
+  it("skips items without an id or senderId", async () => {
     const fake = makeFakeSupabase({});
-    const z = fakeZernio([
+    const z = fakeRepliz([
       {
-        data: [conv("c1"), { id: "c2" }, { participantId: "sender-x" }],
-        pagination: { hasMore: false },
+        docs: [chat("c1"), { _id: "c2" }, { senderId: "sender-x" }],
+        hasNextPage: false,
       },
     ]);
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio: z.client,
+      repliz: z.client,
       workspaceId: "ws-1",
       channels: [channel],
     });
@@ -363,16 +355,17 @@ describe("backfillInboxConversations", () => {
       .fn()
       .mockRejectedValueOnce(new Error("account disconnected"))
       .mockResolvedValueOnce({
-        data: { data: [conv("c1")], pagination: { hasMore: false } },
+        docs: [chat("c1")],
+        hasNextPage: false,
       });
-    const zernio = { messages: { listInboxConversations: list } } as unknown as Zernio;
+    const repliz = { chats: { list } } as unknown as ReplizClient;
 
     const res = await backfillInboxConversations({
       supabase: fake.client,
-      zernio,
+      repliz,
       workspaceId: "ws-1",
       channels: [
-        { id: "ch-bad", late_account_id: "acc-bad", platform: "facebook" },
+        { id: "ch-bad", repliz_account_id: "acc-bad", platform: "facebook" },
         channel,
       ],
     });

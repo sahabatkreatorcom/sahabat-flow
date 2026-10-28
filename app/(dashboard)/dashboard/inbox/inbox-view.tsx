@@ -30,7 +30,7 @@ export function InboxView({
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Imports conversations that already exist in Zernio (e.g. from before the
+  // Imports conversations that already exist in Repliz (e.g. from before the
   // webhook was registered), then refreshes the server-rendered list.
   async function handleSyncConversations() {
     setSyncing(true);
@@ -130,7 +130,7 @@ export function InboxView({
                 No conversations yet
               </p>
               <p className="mt-1 max-w-xs text-xs text-muted-foreground/70">
-                If you already have conversations in Zernio, sync them to bring
+                If you already have conversations, sync them to bring
                 them into your inbox.
               </p>
               <button

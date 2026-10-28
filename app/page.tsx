@@ -19,6 +19,7 @@ import {
   Link2,
 } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
+import { GITHUB_URL } from "@/lib/site";
 
 export default function Home() {
   return (
@@ -27,19 +28,21 @@ export default function Home() {
       <nav className="sticky top-0 z-50 border-b border-gray-100 bg-white/80 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2.5">
-            <Image src="/logo.png" alt="ZernFlow" width={28} height={28} className="rounded-lg" />
-            <span className="text-base font-bold text-gray-900">ZernFlow</span>
+            <Image src="/logo.png" alt="Sahabat Kreator" width={28} height={28} className="rounded-lg" />
+            <span className="text-base font-bold text-gray-900">Sahabat Kreator</span>
           </Link>
           <div className="flex items-center gap-3">
-            <Link
-              href="https://github.com/zernio-dev/zernflow"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-gray-500 hover:text-gray-900 sm:inline-flex"
-            >
-              <Github className="h-4 w-4" />
-              Star on GitHub
-            </Link>
+            {GITHUB_URL && (
+              <Link
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-gray-500 hover:text-gray-900 sm:inline-flex"
+              >
+                <Github className="h-4 w-4" />
+                Star on GitHub
+              </Link>
+            )}
             <Link
               href="/login"
               className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:text-gray-900"
@@ -61,22 +64,24 @@ export default function Home() {
         <div className="mx-auto max-w-3xl text-center">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-4 py-1.5">
             <span className="text-xs font-medium text-indigo-700">MIT Licensed</span>
-            <Link
-              href="https://github.com/zernio-dev/zernflow"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-medium text-indigo-500 hover:text-indigo-700"
-            >
-              View on GitHub <ArrowRight className="h-3 w-3" />
-            </Link>
+            {GITHUB_URL && (
+              <Link
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-indigo-500 hover:text-indigo-700"
+              >
+                View on GitHub <ArrowRight className="h-3 w-3" />
+              </Link>
+            )}
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
             The Open Source{" "}
             <span className="text-indigo-600">ManyChat Alternative</span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-gray-500">
-            Automate DMs, comments, and flows across Instagram, Facebook, WhatsApp,
-            Telegram, X, Bluesky, and Reddit. Free, self-hostable, and built for developers.
+            Automate DMs, comments, and flows across Instagram, Facebook, Telegram,
+            and TikTok. Free, self-hostable, and built for developers.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
@@ -86,15 +91,17 @@ export default function Home() {
               Get started free
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
-            <Link
-              href="https://github.com/zernio-dev/zernflow"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:w-auto"
-            >
-              <Github className="h-4 w-4" />
-              View source code
-            </Link>
+            {GITHUB_URL && (
+              <Link
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:w-auto"
+              >
+                <Github className="h-4 w-4" />
+                View source code
+              </Link>
+            )}
           </div>
           <p className="mt-4 text-xs text-gray-400">MIT licensed. Self-host or use our cloud. No credit card required.</p>
         </div>
@@ -158,16 +165,13 @@ export default function Home() {
       {/* Platforms */}
       <section className="border-y border-gray-100 bg-gray-50/60 py-10">
         <div className="mx-auto max-w-6xl px-6">
-          <p className="mb-4 text-center text-xs font-medium uppercase tracking-wider text-gray-400">Works with 7 platforms (ManyChat only supports 2)</p>
+          <p className="mb-4 text-center text-xs font-medium uppercase tracking-wider text-gray-400">Works with 4 platforms (ManyChat only supports 2)</p>
           <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
             {[
               { name: "Instagram", platform: "instagram" },
               { name: "Facebook", platform: "facebook" },
-              { name: "WhatsApp", platform: "whatsapp" },
               { name: "Telegram", platform: "telegram" },
-              { name: "X / Twitter", platform: "twitter" },
-              { name: "Bluesky", platform: "bluesky" },
-              { name: "Reddit", platform: "reddit" },
+              { name: "TikTok", platform: "tiktok" },
             ].map((p) => (
               <span key={p.platform} className="inline-flex items-center gap-2 text-sm font-medium text-gray-500">
                 <PlatformIcon platform={p.platform} size={18} />
@@ -198,26 +202,24 @@ export default function Home() {
                   <p className="text-sm font-semibold text-gray-400">ManyChat</p>
                 </div>
                 <div className="border-l border-gray-200 bg-indigo-50 px-6 py-4 text-center">
-                  <p className="text-sm font-semibold text-indigo-600">ZernFlow</p>
+                  <p className="text-sm font-semibold text-indigo-600">Sahabat Kreator</p>
                 </div>
               </div>
               {/* Rows */}
               {[
-                { feature: "Instagram & Facebook", manychat: true, zernflow: true },
-                { feature: "WhatsApp", manychat: true, zernflow: true },
-                { feature: "Telegram", manychat: false, zernflow: true },
-                { feature: "X / Twitter", manychat: false, zernflow: true },
-                { feature: "Bluesky & Reddit", manychat: false, zernflow: true },
-                { feature: "Visual flow builder", manychat: true, zernflow: true },
-                { feature: "AI responses (BYO key)", manychat: true, zernflow: true },
-                { feature: "Choose your AI provider", manychat: false, zernflow: true },
-                { feature: "Comment-to-DM", manychat: true, zernflow: true },
-                { feature: "Live chat inbox", manychat: true, zernflow: true },
-                { feature: "Sequences / drip campaigns", manychat: true, zernflow: true },
-                { feature: "Contact CRM", manychat: true, zernflow: true },
-                { feature: "Open source", manychat: false, zernflow: true },
-                { feature: "Self-hostable", manychat: false, zernflow: true },
-                { feature: "Free forever", manychat: false, zernflow: true },
+                { feature: "Instagram & Facebook", manychat: true, sahabatkreator: true },
+                { feature: "Telegram", manychat: false, sahabatkreator: true },
+                { feature: "TikTok", manychat: false, sahabatkreator: true },
+                { feature: "Visual flow builder", manychat: true, sahabatkreator: true },
+                { feature: "AI responses (BYO key)", manychat: true, sahabatkreator: true },
+                { feature: "Choose your AI provider", manychat: false, sahabatkreator: true },
+                { feature: "Comment-to-DM", manychat: true, sahabatkreator: true },
+                { feature: "Live chat inbox", manychat: true, sahabatkreator: true },
+                { feature: "Sequences / drip campaigns", manychat: true, sahabatkreator: true },
+                { feature: "Contact CRM", manychat: true, sahabatkreator: true },
+                { feature: "Open source", manychat: false, sahabatkreator: true },
+                { feature: "Self-hostable", manychat: false, sahabatkreator: true },
+                { feature: "Free forever", manychat: false, sahabatkreator: true },
               ].map((row) => (
                 <div key={row.feature} className="grid grid-cols-3 border-b border-gray-100 last:border-b-0">
                   <div className="px-6 py-3">
@@ -322,7 +324,7 @@ export default function Home() {
                 Open source. Not open-washing.
               </h2>
               <p className="mt-4 text-base leading-relaxed text-gray-500">
-                ZernFlow is fully open source under the MIT license. Read every line of code,
+                Sahabat Kreator is fully open source under the MIT license. Read every line of code,
                 self-host on your own infrastructure, or fork it and make it yours.
                 No &ldquo;open core&rdquo; tricks, no enterprise-only features behind a paywall.
               </p>
@@ -330,22 +332,24 @@ export default function Home() {
                 Your automations, your contacts, your data. You own everything.
                 No vendor lock-in, ever.
               </p>
-              <div className="mt-6">
-                <Link
-                  href="https://github.com/zernio-dev/zernflow"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700"
-                >
-                  <Github className="h-4 w-4" />
-                  Star us on GitHub
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
+              {GITHUB_URL && (
+                <div className="mt-6">
+                  <Link
+                    href={GITHUB_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                  >
+                    <Github className="h-4 w-4" />
+                    Star us on GitHub
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              )}
             </div>
             <div className="space-y-3">
               {[
-                { label: "7 platforms, one tool", detail: "Instagram, Facebook, WhatsApp, Telegram, X, Bluesky, Reddit. ManyChat only does 3." },
+                { label: "4 platforms, one tool", detail: "Instagram, Facebook, Telegram, and TikTok. ManyChat only does 3." },
                 { label: "Free forever", detail: "No monthly fees. No per-account charges. No feature limits." },
                 { label: "Self-hostable", detail: "Clone the repo, set your env vars, deploy. Your server, your rules." },
                 { label: "Community-driven", detail: "Built in public. PRs welcome. Roadmap shaped by users, not investors." },
@@ -372,7 +376,7 @@ export default function Home() {
                 step: "1",
                 icon: CheckCircle,
                 title: "Connect your accounts",
-                desc: "Link your Instagram, Facebook, WhatsApp, Telegram, or any other platform in a few clicks.",
+                desc: "Link your Instagram, Facebook, Telegram, or TikTok account in a few clicks.",
               },
               {
                 step: "2",
@@ -459,15 +463,17 @@ export default function Home() {
                   Get started free
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
-                <Link
-                  href="https://github.com/zernio-dev/zernflow"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-400 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500"
-                >
-                  <Github className="h-4 w-4" />
-                  Star on GitHub
-                </Link>
+                {GITHUB_URL && (
+                  <Link
+                    href={GITHUB_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg border border-indigo-400 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500"
+                  >
+                    <Github className="h-4 w-4" />
+                    Star on GitHub
+                  </Link>
+                )}
               </div>
             </div>
           </div>
@@ -478,26 +484,21 @@ export default function Home() {
       <footer className="border-t border-gray-100 py-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-400">ZernFlow</span>
-            <span className="text-sm text-gray-300">|</span>
-            <Link
-              href="https://github.com/zernio-dev/zernflow"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600"
-            >
-              <Github className="h-3.5 w-3.5" />
-              GitHub
-            </Link>
-            <Link
-              href="https://zernio.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:opacity-80 transition-opacity"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/powered-by-zernio.svg" alt="Powered by Zernio" className="h-10" />
-            </Link>
+            <span className="text-sm text-gray-400">Sahabat Kreator</span>
+            {GITHUB_URL && (
+              <>
+                <span className="text-sm text-gray-300">|</span>
+                <Link
+                  href={GITHUB_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600"
+                >
+                  <Github className="h-3.5 w-3.5" />
+                  GitHub
+                </Link>
+              </>
+            )}
           </div>
           <p className="text-xs text-gray-400">
             Open source, MIT licensed

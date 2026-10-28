@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { createZernioClient } from "@/lib/zernio-client";
+import { createReplizClient } from "@/lib/repliz-client";
 import type { SequenceStep } from "@/lib/types/database";
 
 /**
@@ -141,41 +141,35 @@ async function sendSequenceMessage(
   channelId: string,
   text: string
 ) {
-  // Get workspace API key
+  // Get workspace credentials
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("late_api_key_encrypted")
+    .select("repliz_access_key_encrypted, repliz_secret_key_encrypted")
     .eq("id", workspaceId)
     .single();
 
-  if (!workspace?.late_api_key_encrypted) {
-    console.error("No Zernio API key for workspace:", workspaceId);
+  if (
+    !workspace?.repliz_access_key_encrypted ||
+    !workspace.repliz_secret_key_encrypted
+  ) {
+    console.error("No Repliz credentials for workspace:", workspaceId);
     return;
   }
 
-  const zernio = createZernioClient(workspace.late_api_key_encrypted);
-
-  // Get channel's late_account_id
-  const { data: channel } = await supabase
-    .from("channels")
-    .select("late_account_id")
-    .eq("id", channelId)
-    .single();
-
-  if (!channel?.late_account_id) {
-    console.error("No late_account_id for channel:", channelId);
-    return;
-  }
+  const repliz = createReplizClient(
+    workspace.repliz_access_key_encrypted,
+    workspace.repliz_secret_key_encrypted
+  );
 
   // Get conversation for this contact + channel
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("id, late_conversation_id")
+    .select("id, repliz_chat_id")
     .eq("contact_id", contactId)
     .eq("channel_id", channelId)
     .single();
 
-  if (!conversation?.late_conversation_id) {
+  if (!conversation?.repliz_chat_id) {
     console.error(
       "No conversation found for contact:",
       contactId,
@@ -186,9 +180,9 @@ async function sendSequenceMessage(
   }
 
   try {
-    const response = await zernio.messages.sendInboxMessage({
-      path: { conversationId: conversation.late_conversation_id },
-      body: { accountId: channel.late_account_id, message: text },
+    const response = await repliz.chats.send(conversation.repliz_chat_id, {
+      type: "text",
+      text,
     });
 
     // Store outbound message
@@ -197,7 +191,7 @@ async function sendSequenceMessage(
       direction: "outbound",
       text,
       status: "sent",
-      platform_message_id: response.data?.data?.messageId || null,
+      platform_message_id: response.messageId || null,
     });
   } catch (err) {
     console.error("Failed to send sequence message:", err);

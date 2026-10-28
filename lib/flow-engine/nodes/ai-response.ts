@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
 import type { FlowExecutionContext, AiResponseNodeData } from "../types";
-import { createZernioClient } from "@/lib/zernio-client";
+import { createReplizClient } from "@/lib/repliz-client";
 import { generateText, createGateway } from "ai";
 
 // Halt the run: continuing would let a downstream Send Message deliver the
@@ -24,53 +24,40 @@ export async function executeAiResponse(
   context: FlowExecutionContext,
   sessionId: string
 ) {
-  // Get workspace for Zernio API key + AI Gateway key
+  // Get workspace for Repliz credentials + AI Gateway key
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("late_api_key_encrypted, ai_api_key")
+    .select("repliz_access_key_encrypted, repliz_secret_key_encrypted, ai_api_key")
     .eq("id", context.workspaceId)
     .single();
 
-  if (!workspace?.late_api_key_encrypted) {
-    console.error("No Zernio API key for workspace:", context.workspaceId);
+  if (
+    !workspace?.repliz_access_key_encrypted ||
+    !workspace.repliz_secret_key_encrypted
+  ) {
+    console.error("No Repliz credentials for workspace:", context.workspaceId);
     return cancelRun(supabase, sessionId);
   }
 
-  const zernio = createZernioClient(workspace.late_api_key_encrypted);
+  const repliz = createReplizClient(
+    workspace.repliz_access_key_encrypted,
+    workspace.repliz_secret_key_encrypted
+  );
 
-  // Resolve late_account_id from channel if not in context
-  let lateAccountId = context.lateAccountId;
-  if (!lateAccountId) {
-    const { data: channel } = await supabase
-      .from("channels")
-      .select("late_account_id, platform")
-      .eq("id", context.channelId)
-      .single();
-
-    if (!channel) {
-      console.error("No channel found for id:", context.channelId);
-      return cancelRun(supabase, sessionId);
-    }
-    lateAccountId = channel.late_account_id;
-    if (!context.platform) {
-      context.platform = channel.platform as FlowExecutionContext["platform"];
-    }
-  }
-
-  // Resolve late_conversation_id from conversation if not in context
-  let lateConversationId = context.lateConversationId;
-  if (!lateConversationId) {
+  // Resolve repliz_chat_id from conversation if not in context
+  let replizChatId = context.replizChatId;
+  if (!replizChatId) {
     const { data: conversation } = await supabase
       .from("conversations")
-      .select("late_conversation_id")
+      .select("repliz_chat_id")
       .eq("id", context.conversationId)
       .single();
 
-    if (!conversation?.late_conversation_id) {
-      console.error("No late_conversation_id found for conversation:", context.conversationId);
+    if (!conversation?.repliz_chat_id) {
+      console.error("No repliz_chat_id found for conversation:", context.conversationId);
       return cancelRun(supabase, sessionId);
     }
-    lateConversationId = conversation.late_conversation_id;
+    replizChatId = conversation.repliz_chat_id;
   }
 
   // Fetch last N messages from the conversation for context
@@ -115,10 +102,10 @@ export async function executeAiResponse(
     context.variables = { ...(context.variables ?? {}), ai_response: text };
 
     if (data.sendDirectly !== false) {
-      // Send via Zernio REST API (same pattern as executeSendMessage)
-      const response = await zernio.messages.sendInboxMessage({
-        path: { conversationId: lateConversationId },
-        body: { accountId: lateAccountId, message: text },
+      // Send via the Repliz Chat API (same pattern as executeSendMessage)
+      const response = await repliz.chats.send(replizChatId, {
+        type: "text",
+        text,
       });
 
       // Store outbound message
@@ -129,7 +116,7 @@ export async function executeAiResponse(
         attachments: null,
         sent_by_flow_id: context.flowId,
         sent_by_node_id: null,
-        platform_message_id: response.data?.data?.messageId || null,
+        platform_message_id: response.messageId || null,
         status: "sent",
       });
 

@@ -366,7 +366,7 @@ export function GrowthView({
                 >
                   {channels.map((ch) => (
                     <option key={ch.id} value={ch.id}>
-                      {ch.display_name || ch.username || ch.late_account_id} (
+                      {ch.display_name || ch.username || ch.repliz_account_id} (
                       {PLATFORM_LABELS[ch.platform]})
                     </option>
                   ))}
@@ -468,7 +468,7 @@ export function GrowthView({
                   className="mt-1.5 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground/60">
-                  Limit this rule to specific Zernio post IDs. If empty, all posts
+                  Limit this rule to specific post IDs. If empty, all posts
                   on this channel are monitored.
                 </p>
               </div>

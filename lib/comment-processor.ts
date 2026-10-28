@@ -1,13 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/types/database";
 import { executeFlow } from "@/lib/flow-engine/engine";
-import { createZernioClient } from "@/lib/zernio-client";
+import { createReplizClient } from "@/lib/repliz-client";
 
 type Channel = Database["public"]["Tables"]["channels"]["Row"];
 type Trigger = Database["public"]["Tables"]["triggers"]["Row"];
 
 export interface IncomingComment {
+  /** Platform comment id (Facebook/Instagram/... id). */
   id: string;
+  /** Repliz comment `_id`, required by the public reply endpoint. */
+  replizId?: string;
   postId: string;
   text: string;
   author: { id?: string; name?: string; username?: string };
@@ -171,30 +174,36 @@ export async function processComment({
     if (config.replyText) {
       const { data: workspace } = await supabase
         .from("workspaces")
-        .select("late_api_key_encrypted")
+        .select("repliz_access_key_encrypted, repliz_secret_key_encrypted")
         .eq("id", channel.workspace_id)
         .single();
 
-      if (workspace?.late_api_key_encrypted) {
-        try {
-          const zernio = createZernioClient(workspace.late_api_key_encrypted);
-          await zernio.comments.replyToInboxPost({
-            path: { postId: comment.postId },
-            body: {
-              accountId: channel.late_account_id,
-              message: config.replyText,
-              commentId: comment.id,
-            },
-          });
-          replySent = true;
-        } catch (err) {
-          console.error("Failed to post comment reply:", err);
+      if (
+        workspace?.repliz_access_key_encrypted &&
+        workspace.repliz_secret_key_encrypted
+      ) {
+        if (!comment.replizId) {
+          console.error(
+            "Cannot post public reply: Repliz comment id missing for",
+            comment.id
+          );
+        } else {
+          try {
+            const repliz = createReplizClient(
+              workspace.repliz_access_key_encrypted,
+              workspace.repliz_secret_key_encrypted
+            );
+            await repliz.comments.reply(comment.replizId, config.replyText);
+            replySent = true;
+          } catch (err) {
+            console.error("Failed to post comment reply:", err);
+          }
         }
       }
     }
 
-    // Local conversation only — there is no Zernio DM conversation until the
-    // flow's privateReply node creates one, so late_conversation_id stays null
+    // Local conversation only — Repliz has no DM chat until the contact writes
+    // or the flow's private reply creates one, so repliz_chat_id stays null.
     // and sendMessage nodes in comment flows are no-ops until the contact replies.
     const { data: conversation } = await supabase
       .from("conversations")
@@ -223,7 +232,7 @@ export async function processComment({
           contactId,
           conversationId: conversation.id,
           workspaceId: channel.workspace_id,
-          lateAccountId: channel.late_account_id,
+          replizAccountId: channel.repliz_account_id,
           incomingMessage: {
             text: comment.text,
             sender: {
@@ -234,6 +243,7 @@ export async function processComment({
           },
           variables: {
             comment_id: comment.id,
+            repliz_comment_id: comment.replizId || "",
             comment_text: comment.text,
             commenter_name: senderName,
             post_id: comment.postId,

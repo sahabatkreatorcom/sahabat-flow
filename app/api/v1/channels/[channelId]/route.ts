@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createZernioClient } from "@/lib/zernio-client";
+import { createReplizClient, ReplizApiError } from "@/lib/repliz-client";
 
 async function getWorkspace(supabase: Awaited<ReturnType<typeof createClient>>) {
   const {
@@ -22,8 +22,8 @@ async function getWorkspace(supabase: Awaited<ReturnType<typeof createClient>>) 
 /**
  * DELETE /api/v1/channels/[channelId]
  *
- * Permanently deletes a channel: disconnects the account on Zernio first
- * (otherwise /api/v1/channels/sync would re-create it from listAccounts),
+ * Permanently deletes a channel: disconnects the account on Repliz first
+ * (otherwise /api/v1/channels/sync would re-create it from the account list),
  * then deletes the local row (cascades conversations, contact links, etc.).
  */
 export async function DELETE(
@@ -38,7 +38,7 @@ export async function DELETE(
 
   const { data: channel } = await supabase
     .from("channels")
-    .select("id, late_account_id")
+    .select("id, repliz_account_id")
     .eq("id", channelId)
     .eq("workspace_id", workspace.id)
     .single();
@@ -46,25 +46,29 @@ export async function DELETE(
   if (!channel)
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
 
-  if (workspace.late_api_key_encrypted) {
-    const zernio = createZernioClient(workspace.late_api_key_encrypted);
+  if (
+    workspace.repliz_access_key_encrypted &&
+    workspace.repliz_secret_key_encrypted
+  ) {
+    const repliz = createReplizClient(
+      workspace.repliz_access_key_encrypted,
+      workspace.repliz_secret_key_encrypted
+    );
     try {
-      const res = await zernio.accounts.deleteAccount({
-        path: { accountId: channel.late_account_id },
-      });
-      // A 404 means the account is already gone from Zernio; that's fine.
-      if (res.error && res.response?.status !== 404) {
+      await repliz.accounts.delete(channel.repliz_account_id);
+    } catch (error) {
+      // A 404 means the account is already gone from Repliz; that's fine.
+      if (!(error instanceof ReplizApiError) || error.status !== 404) {
+        console.error("Failed to disconnect Repliz account:", error);
         return NextResponse.json(
-          { error: `Failed to disconnect on Zernio: ${JSON.stringify(res.error)}` },
+          {
+            error: `Failed to disconnect the account: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
           { status: 502 }
         );
       }
-    } catch (error) {
-      console.error("Failed to disconnect Zernio account:", error);
-      return NextResponse.json(
-        { error: `Failed to disconnect on Zernio: ${error instanceof Error ? error.message : String(error)}` },
-        { status: 502 }
-      );
     }
   }
 

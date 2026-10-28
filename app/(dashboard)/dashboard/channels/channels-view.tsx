@@ -36,16 +36,6 @@ function getDmLink(platform: Platform, username: string | null): { url: string |
       return handle ? { url: `https://m.me/${handle}`, label: `m.me/${handle}` } : { url: null, label: "" };
     case "telegram":
       return handle ? { url: `https://t.me/${handle}`, label: `t.me/${handle}` } : { url: null, label: "" };
-    case "twitter":
-      return handle ? { url: `https://x.com/${handle}`, label: `x.com/${handle}` } : { url: null, label: "" };
-    case "reddit":
-      return handle ? { url: `https://reddit.com/message/compose/?to=${handle}`, label: `reddit.com/.../to=${handle}` } : { url: null, label: "" };
-    case "whatsapp": {
-      // Zernio stores WhatsApp numbers display-formatted ("+34 902 80 82 90");
-      // wa.me rejects anything but digits.
-      const digits = handle.replace(/\D/g, "");
-      return digits ? { url: `https://wa.me/${digits}`, label: `wa.me/${digits}` } : { url: null, label: "" };
-    }
     default:
       return { url: null, label: "" };
   }
@@ -66,6 +56,15 @@ export function ChannelsView({
   const [showPlatformPicker, setShowPlatformPicker] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [qrSession, setQrSession] = useState<{
+    token: string;
+    qrcode: string | null;
+    isPasswordRequired: boolean;
+    passwordHint: string | null;
+  } | null>(null);
+  const [qrPassword, setQrPassword] = useState("");
+  const [qrBusy, setQrBusy] = useState(false);
+  const finalizingRef = useRef(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   // Close picker on outside click
@@ -80,6 +79,74 @@ export function ChannelsView({
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showPlatformPicker]);
+
+  // Poll the Telegram QR session until it is scanned and then finalize it.
+  useEffect(() => {
+    const token = qrSession?.token;
+    if (!token) return;
+
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const res = await fetch(
+          `/api/v1/channels/connect/session?token=${encodeURIComponent(token!)}`
+        );
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (!res.ok) {
+          setSyncMessage(data.error || "QR session expired. Please try again.");
+          setQrSession(null);
+          return;
+        }
+
+        setQrSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                qrcode: data.qrcode ?? null,
+                isPasswordRequired: !!data.isPasswordRequired,
+                passwordHint: data.passwordHint ?? null,
+              }
+            : prev
+        );
+
+        if (data.isConnected && !finalizingRef.current) {
+          finalizingRef.current = true;
+          setQrBusy(true);
+          const fin = await fetch("/api/v1/channels/connect/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          });
+          const finData = await fin.json();
+          if (cancelled) return;
+
+          if (!fin.ok || finData.error) {
+            setSyncMessage(finData.error || "Failed to finish Telegram connection");
+            finalizingRef.current = false;
+            setQrBusy(false);
+            return;
+          }
+
+          setQrSession(null);
+          setQrBusy(false);
+          await handleSync();
+        }
+      } catch {
+        // Transient network errors are retried on the next tick.
+      }
+    }
+
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrSession?.token]);
 
   async function handleConnect(platform: Platform) {
     setConnecting(platform);
@@ -97,7 +164,16 @@ export function ChannelsView({
         return;
       }
 
-      if (data.authUrl) {
+      if (data.mode === "qr" && data.token) {
+        finalizingRef.current = false;
+        setQrPassword("");
+        setQrSession({
+          token: data.token,
+          qrcode: null,
+          isPasswordRequired: false,
+          passwordHint: null,
+        });
+      } else if (data.authUrl) {
         window.location.href = data.authUrl;
       }
     } catch {
@@ -106,6 +182,30 @@ export function ChannelsView({
     } finally {
       setConnecting(null);
       setShowPlatformPicker(false);
+    }
+  }
+
+  async function handleQrPassword() {
+    if (!qrSession || !qrPassword) return;
+    setQrBusy(true);
+    try {
+      const res = await fetch("/api/v1/channels/connect/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: qrSession.token, password: qrPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setSyncMessage(data.error || "Incorrect password");
+        setTimeout(() => setSyncMessage(null), 4000);
+      } else {
+        setQrPassword("");
+      }
+    } catch {
+      setSyncMessage("Failed to send the password");
+      setTimeout(() => setSyncMessage(null), 4000);
+    } finally {
+      setQrBusy(false);
     }
   }
 
@@ -138,7 +238,7 @@ export function ChannelsView({
         setSyncMessage(`Could not save some channels: ${failed.join("; ")}`);
       } else if (nothingChanged && syncedChannels.length === 0 && skipped.length > 0) {
         setSyncMessage(
-          `Nothing to connect: ZernFlow does not support ${skipped.join(", ")}`
+          `Nothing to connect: Sahabat Kreator does not support ${skipped.join(", ")}`
         );
       } else if (nothingChanged) {
         setSyncMessage("All channels up to date");
@@ -211,7 +311,7 @@ export function ChannelsView({
           <div>
             <h1 className="text-2xl font-bold">Channels</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Your connected social media accounts from Zernio
+              Your connected social media accounts
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -454,12 +554,81 @@ export function ChannelsView({
           channelToDelete?.display_name ??
           channelToDelete?.username ??
           (channelToDelete ? platformLabel(channelToDelete.platform) : "this channel")
-        } from Zernio and permanently deletes its conversations, contact links, and stats in Zernflow. This cannot be undone.`}
+        } from the messaging provider and permanently deletes its conversations, contact links, and stats in Sahabat Kreator. This cannot be undone.`}
         confirmLabel="Delete"
         destructive
         onConfirm={handleDelete}
         onCancel={() => setChannelToDelete(null)}
       />
+
+      {qrSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-xl">
+            <h2 className="text-lg font-semibold">Connect Telegram</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Open Telegram on your phone, go to Settings → Devices, tap “Link
+              Desktop Device”, and scan this code.
+            </p>
+
+            <div className="mt-5 flex flex-col items-center gap-3">
+              {qrSession.isPasswordRequired ? (
+                <div className="w-full space-y-3">
+                  <p className="text-sm text-foreground">
+                    Two-Step Verification is enabled.
+                    {qrSession.passwordHint
+                      ? ` Hint: ${qrSession.passwordHint}`
+                      : ""}
+                  </p>
+                  <input
+                    type="password"
+                    value={qrPassword}
+                    onChange={(e) => setQrPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleQrPassword();
+                    }}
+                    placeholder="Telegram password"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleQrPassword}
+                    disabled={qrBusy || !qrPassword}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  >
+                    {qrBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Continue
+                  </button>
+                </div>
+              ) : qrSession.qrcode ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`data:image/png;base64,${qrSession.qrcode}`}
+                  alt="Telegram login QR code"
+                  className="h-56 w-56 rounded-lg bg-white p-2"
+                />
+              ) : (
+                <div className="flex h-56 w-56 items-center justify-center rounded-lg bg-muted">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {qrBusy && !qrSession.isPasswordRequired && (
+                <p className="text-xs text-muted-foreground">
+                  Finishing connection...
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setQrSession(null)}
+              className="mt-5 w-full rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

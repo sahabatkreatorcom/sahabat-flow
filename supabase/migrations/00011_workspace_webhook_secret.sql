@@ -1,4 +1,3 @@
--- Add workspace-level webhook secret for Zernio HMAC signature verification.
--- Zernio exposes a single webhook per profile/API key, so the secret lives at the
--- workspace level (not per-channel). Used by /api/webhooks/late to verify signatures.
+-- Add workspace-level webhook token. Repliz sends one token per workspace in
+-- the x-token header; /api/webhooks/repliz rejects requests that do not match.
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS webhook_secret TEXT;

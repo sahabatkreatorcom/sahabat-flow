@@ -72,7 +72,9 @@ export interface Database {
           id: string;
           name: string;
           slug: string;
-          late_api_key_encrypted: string | null;
+          repliz_access_key_encrypted: string | null;
+          repliz_secret_key_encrypted: string | null;
+          webhook_secret: string | null;
           ai_api_key: string | null;
           ai_provider: string;
           global_keywords: Json | null;
@@ -83,7 +85,9 @@ export interface Database {
           id?: string;
           name: string;
           slug: string;
-          late_api_key_encrypted?: string | null;
+          repliz_access_key_encrypted?: string | null;
+          repliz_secret_key_encrypted?: string | null;
+          webhook_secret?: string | null;
           ai_api_key?: string | null;
           ai_provider?: string;
           global_keywords?: Json | null;
@@ -94,7 +98,9 @@ export interface Database {
           id?: string;
           name?: string;
           slug?: string;
-          late_api_key_encrypted?: string | null;
+          repliz_access_key_encrypted?: string | null;
+          repliz_secret_key_encrypted?: string | null;
+          webhook_secret?: string | null;
           ai_api_key?: string | null;
           ai_provider?: string;
           global_keywords?: Json | null;
@@ -133,7 +139,7 @@ export interface Database {
           id: string;
           workspace_id: string;
           platform: Platform;
-          late_account_id: string;
+          repliz_account_id: string;
           username: string | null;
           display_name: string | null;
           profile_picture: string | null;
@@ -149,7 +155,7 @@ export interface Database {
           id?: string;
           workspace_id: string;
           platform: Platform;
-          late_account_id: string;
+          repliz_account_id: string;
           username?: string | null;
           display_name?: string | null;
           profile_picture?: string | null;
@@ -163,7 +169,7 @@ export interface Database {
         };
         Update: {
           platform?: Platform;
-          late_account_id?: string;
+          repliz_account_id?: string;
           username?: string | null;
           display_name?: string | null;
           profile_picture?: string | null;
@@ -592,7 +598,7 @@ export interface Database {
           workspace_id: string;
           channel_id: string;
           contact_id: string;
-          late_conversation_id: string | null;
+          repliz_chat_id: string | null;
           platform: Platform;
           status: ConversationStatus;
           assigned_to: string | null;
@@ -608,7 +614,7 @@ export interface Database {
           workspace_id: string;
           channel_id: string;
           contact_id: string;
-          late_conversation_id?: string | null;
+          repliz_chat_id?: string | null;
           platform: Platform;
           status?: ConversationStatus;
           assigned_to?: string | null;
@@ -620,7 +626,7 @@ export interface Database {
           updated_at?: string;
         };
         Update: {
-          late_conversation_id?: string | null;
+          repliz_chat_id?: string | null;
           status?: ConversationStatus;
           assigned_to?: string | null;
           last_message_at?: string | null;

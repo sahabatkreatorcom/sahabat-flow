@@ -1,17 +1,16 @@
-# ZernFlow
+# Sahabat Kreator
 
-The open-source ManyChat alternative. Visual flow builder for Instagram, Facebook, WhatsApp, Telegram, Twitter/X, Bluesky & Reddit.
+<p align="center">
+  <img src="public/logo-full.png" alt="Sahabat Kreator" width="360" />
+</p>
+
+The open-source ManyChat alternative. Visual flow builder for Instagram, Facebook, Telegram & TikTok.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Website](https://img.shields.io/badge/Website-zernflow.com-indigo)](https://zernflow.com)
 
-**Live at [zernflow.com](https://zernflow.com)**
+## What is Sahabat Kreator?
 
-## What is ZernFlow?
-
-ZernFlow is an open-source alternative to ManyChat. Build visual chatbot flows, manage contacts, send broadcasts, run drip campaigns, and handle live chat conversations across 7 social media platforms.
-
-**Powered by [Zernio](https://zernio.com)** for OAuth, token refresh, rate limiting, and cross-platform messaging.
+Sahabat Kreator is an open-source alternative to ManyChat. Build visual chatbot flows, manage contacts, send broadcasts, run drip campaigns, and handle live chat conversations across Instagram, Facebook, Telegram, and TikTok.
 
 ### Features
 
@@ -22,14 +21,24 @@ ZernFlow is an open-source alternative to ManyChat. Build visual chatbot flows, 
 - **Broadcasting** - Send targeted messages to contact segments
 - **Sequences** - Drip campaigns with timed message series and automatic enrollment
 - **Team Management** - Invite members, assign roles, manage permissions
-- **Multi-Platform** - Instagram, Facebook, WhatsApp, Telegram, Twitter/X, Bluesky, Reddit
-  - WhatsApp needs a WhatsApp Business Account; Meta's signup flow creates one during connect. Meta only accepts free-form messages within 24 hours of the contact's last message, so auto-replies work while broadcasts and delayed sequence steps can be rejected outside that window (approved message templates are not supported yet).
-- **Connect Channels** - OAuth connection flow directly from ZernFlow (powered by Zernio)
-- **Rich Messaging** - Buttons, quick replies, and carousel cards
+- **Multi-Platform** - Instagram, Facebook, Telegram, TikTok
+  - DMs, inbound webhooks, and comment replies are delivered through the messaging bridge. Rich content degrades to what each platform supports: buttons become URL buttons, while quick replies, carousels, and postback buttons are flattened into numbered text options.
+- **Connect Channels** - OAuth connection flow directly from Sahabat Kreator; Telegram connects by QR session
 - **Comment-to-DM** - Automatically DM users who comment specific keywords
 - **Growth Tools** - Conversation starter links for each connected platform
 - **A/B Testing** - Split test different message paths
 - **Webhooks & HTTP** - Connect to external APIs from your flows
+
+### Messaging bridge requirements
+
+The messaging bridge gates parts of the API by plan. Sahabat Kreator needs:
+
+| Feature | Minimum plan |
+|---------|--------------|
+| Inbound webhooks, comment replies | Standard |
+| Chat inbox, content/private replies, OAuth connect | Gold |
+
+Without the required tier, channel connection and message delivery fail with a provider API error.
 
 ## Quick Start
 
@@ -37,7 +46,7 @@ ZernFlow is an open-source alternative to ManyChat. Build visual chatbot flows, 
 
 - Node.js 18+
 - A [Supabase](https://supabase.com) project (free tier works)
-- A [Zernio](https://zernio.com) API key (entered in Settings after setup)
+- A [Repliz](https://repliz.com) account with an Access Key and Secret Key (entered in Settings after setup)
 - A [Vercel AI Gateway](https://vercel.com/ai-gateway) key (optional, for AI node, entered in Settings or env)
 
 ### Setup
@@ -45,8 +54,8 @@ ZernFlow is an open-source alternative to ManyChat. Build visual chatbot flows, 
 1. **Clone the repo**
 
 ```bash
-git clone https://github.com/zernio-dev/zernflow.git
-cd zernflow
+git clone <your-repo-url>
+cd sahabatkreator
 npm install
 ```
 
@@ -56,8 +65,8 @@ Create a free project at [supabase.com](https://supabase.com). Then run the SQL 
 
 ```bash
 # Run every numbered file in supabase/migrations/ in order, 00001 upwards.
-# Skipping later ones leaves features broken: 00016, for example, is what
-# lets a WhatsApp channel be stored at all.
+# 00017 adds the messaging provider secret key column; run it even on an
+# existing database.
 ```
 
 3. **Configure environment**
@@ -76,7 +85,7 @@ CRON_SECRET=your-cron-secret              # For sequence processor + job schedul
 # AI_GATEWAY_API_KEY=...                  # Optional, for self-hosted (Vercel handles this automatically)
 ```
 
-After starting the app, go to **Settings** to enter your Zernio API key and (optionally) AI Gateway key.
+After starting the app, go to **Settings** to enter your Repliz Access Key and Secret Key, plus (optionally) an AI Gateway key. The same page shows the webhook URL and token to paste into Repliz.
 
 4. **Run**
 
@@ -85,6 +94,12 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000), sign up, and start building flows.
+
+### Webhook
+
+Repliz delivers events to `POST /api/webhooks/repliz?workspace=<workspace-id>`. Requests must carry the workspace token in the `x-token` header; Sahabat Kreator rejects anything else. The token is generated on the Settings page and stored as `workspaces.webhook_secret`.
+
+Repliz does not retry deliveries, and events may arrive out of order, so the receiver records each delivery ID before processing and treats duplicates as no-ops.
 
 ## Architecture
 
@@ -100,8 +115,8 @@ Recv.  Engine     Chat           Processor
    |    |    |    |    |    |
    +----+----+----+----+----+
         |         |         |
-    Supabase   Zernio API AI SDK
-  (PG + Auth   (7 platforms) (OpenAI /
+    Supabase   Repliz API  AI SDK
+  (PG + Auth  (4 platforms) (OpenAI /
   + Realtime)              Anthropic /
                            Google)
 ```
@@ -116,14 +131,14 @@ Recv.  Engine     Chat           Processor
 | AI | Vercel AI SDK + [AI Gateway](https://vercel.com/ai-gateway) |
 | UI | Tailwind CSS 4 |
 | Icons | @icons-pack/react-simple-icons |
-| Messaging | [Zernio API](https://zernio.com) |
+| Messaging | [Repliz API](https://docs.repliz.com/api/introduction.html) |
 
 ## Flow Node Types
 
 | Node | Description |
 |------|-------------|
 | Trigger | Keyword, postback, quick reply, welcome, default |
-| Send Message | Text, images, buttons, quick replies, carousels |
+| Send Message | Text, images, buttons (URL buttons where supported) |
 | AI Response | AI-powered replies with conversation context (OpenAI, Anthropic, Google) |
 | Condition | If/else on tags, fields, platform, variables |
 | Delay | Wait seconds/minutes/hours/days |
@@ -137,18 +152,18 @@ Recv.  Engine     Chat           Processor
 | A/B Split | Randomly route contacts for testing |
 | Smart Delay | Wait for user response or timeout |
 | Comment Reply | Public reply to comments |
-| Private Reply | Instagram comment-to-DM |
+| Private Reply | Instagram/Facebook comment-to-DM |
 
 ## Project Structure
 
 ```
-zernflow/
+sahabatkreator/
 ├── app/
 │   ├── (auth)/             # Login, register pages
 │   ├── (dashboard)/        # Flows, inbox, contacts, sequences, settings
 │   ├── invite/             # Team invite acceptance page
 │   └── api/
-│       ├── webhooks/late/   # Webhook receiver
+│       ├── webhooks/repliz/ # Repliz webhook receiver
 │       ├── cron/jobs/       # Job scheduler
 │       ├── cron/sequences/  # Sequence step processor
 │       └── v1/              # CRUD API routes
@@ -160,11 +175,15 @@ zernflow/
 │   └── ui/                  # Shared UI components
 ├── lib/
 │   ├── supabase/            # Server/client/middleware
+│   ├── repliz-client.ts     # Typed Repliz REST client
+│   ├── repliz-message.ts    # Rich message -> Repliz payload
+│   ├── repliz-webhook.ts    # Token + URL helpers
+│   ├── channel-sync.ts      # Repliz accounts -> channels
 │   ├── flow-engine/         # Engine, trigger matcher, platform adapter, AI node
 │   ├── actions/             # Server actions (team, sequences, workspace)
 │   └── types/               # TypeScript types
 └── supabase/
-    └── migrations/          # SQL schema + RLS policies (00001-00009)
+    └── migrations/          # SQL schema + RLS policies (00001-00017)
 ```
 
 ## Contributing
@@ -174,9 +193,3 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## License
 
 MIT
-
-<p align="center">
-  <a href="https://zernio.com">
-    <img src="https://zernio.com/brand/powered-by-zernio.svg" alt="Powered by Zernio" width="180">
-  </a>
-</p>

@@ -1,30 +1,31 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { APP_URL } from "@/lib/site";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
-    default: "ZernFlow - The Open Source ManyChat Alternative",
-    template: "%s | ZernFlow",
+    default: "Sahabat Kreator - The Open Source ManyChat Alternative",
+    template: "%s | Sahabat Kreator",
   },
   description:
-    "Automate DMs, comments, and flows across Instagram, Facebook, WhatsApp, Telegram, X, Bluesky, and Reddit. Free, self-hostable, and open source.",
-  metadataBase: new URL("https://zernflow.com"),
+    "Automate DMs, comments, and flows across Instagram, Facebook, Telegram, and TikTok. Free, self-hostable, and open source.",
+  metadataBase: new URL(APP_URL),
   openGraph: {
-    title: "ZernFlow - The Open Source ManyChat Alternative",
+    title: "Sahabat Kreator - The Open Source ManyChat Alternative",
     description:
-      "Automate DMs, comments, and flows across Instagram, Facebook, WhatsApp, Telegram, X, Bluesky, and Reddit. Free, self-hostable, and open source.",
-    url: "https://zernflow.com",
-    siteName: "ZernFlow",
+      "Automate DMs, comments, and flows across Instagram, Facebook, Telegram, and TikTok. Free, self-hostable, and open source.",
+    url: "/",
+    siteName: "Sahabat Kreator",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ZernFlow - The Open Source ManyChat Alternative",
+    title: "Sahabat Kreator - The Open Source ManyChat Alternative",
     description:
-      "Automate DMs, comments, and flows across 7 platforms. Free, self-hostable, open source.",
+      "Automate DMs, comments, and flows across 4 platforms. Free, self-hostable, open source.",
   },
   icons: {
     icon: [

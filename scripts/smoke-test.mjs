@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * ZernFlow End-to-End Smoke Test
+ * Sahabat Kreator End-to-End Smoke Test
  *
  * This script:
  * 1. Creates a simple test flow (trigger -> send message)
  * 2. Creates a keyword trigger for "test"
- * 3. Sends a simulated Zernio webhook to the deployed app
+ * 3. Sends a simulated Repliz webhook to the deployed app
  * 4. Verifies: contact created, conversation created, message stored, flow session ran
  * 5. Cleans up test data
  *
  * Usage:
  *   node scripts/smoke-test.mjs [base-url]
- *   node scripts/smoke-test.mjs https://zernflow.vercel.app
+ *   node scripts/smoke-test.mjs https://sahabatkreator.com
  *   node scripts/smoke-test.mjs http://localhost:3000
  */
 
@@ -34,14 +34,17 @@ for (const line of readFileSync(envPath, "utf8").split("\n")) {
   if (!process.env[key]) process.env[key] = val;
 }
 
-const BASE_URL = process.argv[2] || "https://zernflow.vercel.app";
+const BASE_URL =
+  process.argv[2] ||
+  process.env.NEXT_PUBLIC_APP_URL ||
+  "http://localhost:3000";
 const WORKSPACE_ID = "1ed7f49a-79d9-42e5-a79d-0ea9e3b957b1";
 
 // Use the telegram channel (simplest for testing)
 const CHANNEL = {
   id: "0231f9d7-e6d2-45e4-931b-48543d492c9d",
   platform: "telegram",
-  late_account_id: "69709fcdc955c6705a96ed84",
+  repliz_account_id: "69709fcdc955c6705a96ed84",
 };
 
 const supabase = createClient(
@@ -53,7 +56,7 @@ const supabase = createClient(
 const testFlowId = randomUUID();
 const testTriggerId = randomUUID();
 const fakeSenderId = `smoke_test_${Date.now()}`;
-const fakeConversationId = `conv_smoke_${Date.now()}`;
+const fakeChatId = `chat_smoke_${Date.now()}`;
 
 const log = (emoji, msg) => console.log(`${emoji}  ${msg}`);
 const pass = (msg) => log("\x1b[32mPASS\x1b[0m", msg);
@@ -81,7 +84,7 @@ async function setup() {
       position: { x: 250, y: 150 },
       data: {
         label: "Smoke Test Reply",
-        messages: [{ text: "Smoke test passed! ZernFlow is working." }],
+        messages: [{ text: "Smoke test passed! Sahabat Kreator is working." }],
       },
     },
   ];
@@ -121,49 +124,53 @@ async function setup() {
 }
 
 async function fireWebhook() {
-  info(`Sending simulated webhook to ${BASE_URL}/api/webhooks/late ...`);
+  const { data: workspace, error } = await supabase
+    .from("workspaces")
+    .select("webhook_secret")
+    .eq("id", WORKSPACE_ID)
+    .single();
+
+  if (error || !workspace?.webhook_secret) {
+    fail("Workspace has no Repliz webhook token; save credentials in Settings first.");
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  const url = `${BASE_URL}/api/webhooks/repliz?workspace=${WORKSPACE_ID}`;
+  info(`Sending simulated webhook to ${url} ...`);
 
   const payload = {
-    event: "message.received",
-    message: {
-      id: `msg_${Date.now()}`,
-      conversationId: fakeConversationId,
-      platform: "telegram",
-      platformMessageId: `tg_${Date.now()}`,
-      direction: "inbound",
-      text: "hey smoketest please",
-      attachments: [],
-      sender: {
-        id: fakeSenderId,
-        name: "Smoke Test User",
-        username: "smoke_tester",
-        picture: null,
+    platform: CHANNEL.platform,
+    type: "chat",
+    accountId: CHANNEL.repliz_account_id,
+    data: {
+      chat: {
+        _id: fakeChatId,
+        accountId: CHANNEL.repliz_account_id,
+        senderId: fakeSenderId,
+        senderName: "Smoke Test User",
+        senderPicture: null,
+        unreadCount: 1,
+        updatedAt: now,
       },
-      sentAt: new Date().toISOString(),
-      isRead: false,
+      message: {
+        _id: `msg_${Date.now()}`,
+        messageId: `tg_${Date.now()}`,
+        senderId: fakeSenderId,
+        isFromMe: false,
+        type: "text",
+        text: "hey smoketest please",
+        createdAt: now,
+      },
     },
-    conversation: {
-      id: fakeConversationId,
-      platformConversationId: `tg_conv_${Date.now()}`,
-      participantId: fakeSenderId,
-      participantName: "Smoke Test User",
-      participantUsername: "smoke_tester",
-      participantPicture: null,
-      status: "open",
-    },
-    account: {
-      id: CHANNEL.late_account_id,
-      platform: "telegram",
-      username: "test_bot",
-      displayName: "Test Bot",
-    },
-    metadata: {},
-    timestamp: new Date().toISOString(),
   };
 
-  const res = await fetch(`${BASE_URL}/api/webhooks/late`, {
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-token": workspace.webhook_secret,
+    },
     body: JSON.stringify(payload),
   });
 
@@ -202,7 +209,7 @@ async function verify() {
   // 2. Check conversation was created
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("id, late_conversation_id, status, last_message_preview")
+    .select("id, repliz_chat_id, status, last_message_preview")
     .eq("channel_id", CHANNEL.id)
     .eq("contact_id", contactChannel?.contact_id || "none")
     .single();
@@ -249,7 +256,7 @@ async function verify() {
   if (outbound) {
     pass(`Outbound message sent: "${outbound.text}" (status: ${outbound.status})`);
   } else {
-    info("Outbound message not found. This is expected if Zernio API key doesn't have inbox access for this channel.");
+    info("Outbound message not found. This is expected if the Repliz credentials or chat ID are not valid for this channel.");
     info("The important thing is that the flow DID execute (check session above).");
   }
 
@@ -311,7 +318,7 @@ async function cleanup() {
 
 async function main() {
   console.log("\n========================================");
-  console.log("  ZernFlow End-to-End Smoke Test");
+  console.log("  Sahabat Kreator End-to-End Smoke Test");
   console.log(`  Target: ${BASE_URL}`);
   console.log("========================================\n");
 

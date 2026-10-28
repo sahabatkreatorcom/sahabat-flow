@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import { adaptMessage } from "./platform-adapter";
 
 /**
- * WhatsApp used to share the Facebook/Instagram branch, which emits Messenger
- * shapes WhatsApp has no equivalent for. It was unreachable while WhatsApp
- * channels could not be stored; issue #16 made it reachable.
+ * Repliz gives Facebook and Instagram Messenger-native shapes, Telegram its
+ * inline keyboard, and TikTok nothing but text. WhatsApp used to share the
+ * Meta branch but is no longer a connectable platform.
  */
-describe("adaptMessage for whatsapp", () => {
+describe("adaptMessage for tiktok", () => {
   it("degrades a carousel to numbered text instead of a generic template", () => {
     const adapted = adaptMessage(
       {
@@ -18,7 +18,7 @@ describe("adaptMessage for whatsapp", () => {
           ],
         },
       },
-      "whatsapp"
+      "tiktok"
     );
 
     expect(adapted.template).toBeUndefined();
@@ -30,25 +30,31 @@ describe("adaptMessage for whatsapp", () => {
   it("keeps a link button's URL by rendering it as text", () => {
     const adapted = adaptMessage(
       { text: "Docs", buttons: [{ title: "Open", type: "url", url: "https://example.com" }] },
-      "whatsapp"
+      "tiktok"
     );
 
     expect(adapted.buttons).toBeUndefined();
     expect(adapted.text).toContain("https://example.com");
   });
 
-  it("passes through up to three reply buttons", () => {
-    const buttons = [
-      { title: "Yes", type: "postback" as const, payload: "yes" },
-      { title: "No", type: "postback" as const, payload: "no" },
-    ];
-    const adapted = adaptMessage({ text: "Confirm?", buttons }, "whatsapp");
+  it("turns reply buttons into numbered text options", () => {
+    const adapted = adaptMessage(
+      {
+        text: "Confirm?",
+        buttons: [
+          { title: "Yes", type: "postback" as const, payload: "yes" },
+          { title: "No", type: "postback" as const, payload: "no" },
+        ],
+      },
+      "tiktok"
+    );
 
-    expect(adapted.buttons).toEqual(buttons);
-    expect(adapted.text).toBe("Confirm?");
+    expect(adapted.buttons).toBeUndefined();
+    expect(adapted.text).toContain("1. Yes");
+    expect(adapted.text).toContain("2. No");
   });
 
-  it("degrades to text when there are more options than Meta accepts", () => {
+  it("degrades quick replies to numbered text", () => {
     const adapted = adaptMessage(
       {
         text: "Pick",
@@ -59,19 +65,53 @@ describe("adaptMessage for whatsapp", () => {
           { title: "D", payload: "d" },
         ],
       },
-      "whatsapp"
+      "tiktok"
     );
 
     expect(adapted.quickReplies).toBeUndefined();
     expect(adapted.text).toContain("4. D");
   });
+});
 
-  it("still gives Facebook the generic template carousel", () => {
+describe("adaptMessage for telegram", () => {
+  it("converts buttons to an inline keyboard", () => {
+    const adapted = adaptMessage(
+      { text: "Open", buttons: [{ title: "Docs", type: "url", url: "https://example.com" }] },
+      "telegram"
+    );
+
+    expect(adapted.replyMarkup?.type).toBe("inline_keyboard");
+    expect(adapted.replyMarkup?.keyboard[0][0]).toEqual({
+      text: "Docs",
+      url: "https://example.com",
+    });
+  });
+
+  it("converts quick replies to a one-time reply keyboard", () => {
+    const adapted = adaptMessage(
+      { text: "Pick", quickReplies: [{ title: "Yes", payload: "yes" }] },
+      "telegram"
+    );
+
+    expect(adapted.replyMarkup?.type).toBe("reply_keyboard");
+    expect(adapted.replyMarkup?.oneTime).toBe(true);
+  });
+});
+
+describe("adaptMessage for meta", () => {
+  it("gives Facebook the generic template carousel", () => {
     const adapted = adaptMessage(
       { carousel: { elements: [{ title: "Basic" }] } },
       "facebook"
     );
 
     expect(adapted.template?.type).toBe("generic");
+  });
+
+  it("passes buttons through for Instagram", () => {
+    const buttons = [{ title: "Yes", type: "postback" as const, payload: "yes" }];
+    const adapted = adaptMessage({ text: "Confirm?", buttons }, "instagram");
+
+    expect(adapted.buttons).toEqual(buttons);
   });
 });

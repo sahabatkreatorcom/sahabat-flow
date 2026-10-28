@@ -163,7 +163,7 @@ export function MessageThread({
   }, [messages]);
 
   // Listen for conversation updates (last_message_at changes when a new message arrives)
-  // and re-fetch messages from Zernio API.
+  // and re-fetch messages from the Repliz API.
   useEffect(() => {
     if (!conversation) return;
 

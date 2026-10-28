@@ -1,14 +1,14 @@
 /**
- * Inbox backfill from Zernio.
+ * Inbox backfill from Repliz.
  *
  * The local `conversations` table is otherwise populated only by inbound
- * webhooks, so conversations that predate webhook registration never appear
- * in the Inbox (#12). This module pages through Zernio's inbox conversations
- * per channel and imports the ones missing locally.
+ * webhooks, so conversations that predate webhook setup never appear in the
+ * Inbox. This module pages through Repliz's chats per channel and imports the
+ * ones missing locally.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Zernio } from "./zernio-client";
+import type { ReplizChat, ReplizClient } from "./repliz-client";
 import { messagePreview } from "@/lib/message-preview";
 
 /** Cap per channel: 4 pages x 50 conversations. */
@@ -17,20 +17,8 @@ const PAGE_SIZE = 50;
 
 export interface BackfillChannel {
   id: string;
-  late_account_id: string;
+  repliz_account_id: string;
   platform: string;
-}
-
-/** Conversation item shape returned by Zernio's listInboxConversations. */
-interface ZernioInboxConversation {
-  id?: string;
-  participantId?: string;
-  participantName?: string;
-  participantPicture?: string | null;
-  lastMessage?: string;
-  updatedTime?: string;
-  status?: "active" | "archived";
-  unreadCount?: number | null;
 }
 
 /**
@@ -108,22 +96,21 @@ export async function upsertContactForSender({
 }
 
 /**
- * Imports Zernio inbox conversations missing from the local `conversations`
- * table. Insert-only: conversations already known (by late_conversation_id)
- * are skipped, and a contact whose (channel_id, contact_id) row already exists
- * under a different late_conversation_id is left to the webhook, so the
- * webhook-maintained late_conversation_id / status / last_message_at /
- * unread_count are never clobbered. A failing channel is logged and skipped,
- * not fatal.
+ * Imports Repliz chats missing from the local `conversations` table.
+ * Insert-only: conversations already known (by repliz_chat_id) are skipped, and
+ * a contact whose (channel_id, contact_id) row already exists under a different
+ * repliz_chat_id is left to the webhook, so the webhook-maintained
+ * repliz_chat_id / status / last_message_at / unread_count are never clobbered.
+ * A failing channel is logged and skipped, not fatal.
  */
 export async function backfillInboxConversations({
   supabase,
-  zernio,
+  repliz,
   workspaceId,
   channels,
 }: {
   supabase: SupabaseClient;
-  zernio: Zernio;
+  repliz: ReplizClient;
   workspaceId: string;
   channels: BackfillChannel[];
 }): Promise<{ imported: number }> {
@@ -131,7 +118,12 @@ export async function backfillInboxConversations({
 
   for (const channel of channels) {
     try {
-      imported += await backfillChannel({ supabase, zernio, workspaceId, channel });
+      imported += await backfillChannel({
+        supabase,
+        repliz,
+        workspaceId,
+        channel,
+      });
     } catch (err) {
       console.error(
         `[inbox-sync] backfill failed for channel ${channel.id} (${channel.platform}):`,
@@ -145,59 +137,52 @@ export async function backfillInboxConversations({
 
 async function backfillChannel({
   supabase,
-  zernio,
+  repliz,
   workspaceId,
   channel,
 }: {
   supabase: SupabaseClient;
-  zernio: Zernio;
+  repliz: ReplizClient;
   workspaceId: string;
   channel: BackfillChannel;
 }): Promise<number> {
   const { data: existingRows } = await supabase
     .from("conversations")
-    .select("late_conversation_id")
+    .select("repliz_chat_id")
     .eq("channel_id", channel.id);
 
   const known = new Set(
     (existingRows ?? [])
-      .map((r: { late_conversation_id: string | null }) => r.late_conversation_id)
+      .map((r: { repliz_chat_id: string | null }) => r.repliz_chat_id)
       .filter(Boolean)
   );
 
   let imported = 0;
-  let cursor: string | undefined;
   const seenParticipants = new Set<string>();
 
-  for (let page = 0; page < MAX_PAGES_PER_CHANNEL; page++) {
-    const res = await zernio.messages.listInboxConversations({
-      query: {
-        accountId: channel.late_account_id,
-        limit: PAGE_SIZE,
-        sortOrder: "desc",
-        cursor,
-      },
+  for (let page = 1; page <= MAX_PAGES_PER_CHANNEL; page++) {
+    const res = await repliz.chats.list({
+      accountId: channel.repliz_account_id,
+      page,
+      limit: PAGE_SIZE,
     });
 
-    const conversations = (res.data?.data ?? []) as ZernioInboxConversation[];
+    const chats = res.docs ?? [];
 
-    for (const conv of conversations) {
-      if (!conv.id || !conv.participantId) continue;
-      // A participant can have several Zernio conversations but the local
-      // table is unique on (channel_id, contact_id). sortOrder desc means the
-      // first conversation seen per participant is the most recent one; later
-      // ones are dropped so they cannot overwrite it.
-      if (seenParticipants.has(conv.participantId)) continue;
-      seenParticipants.add(conv.participantId);
-      if (known.has(conv.id)) continue;
-      if (await importConversation({ supabase, workspaceId, channel, conv })) {
+    for (const chat of chats) {
+      if (!chat._id || !chat.senderId) continue;
+      // A participant can have several chats but the local table is unique on
+      // (channel_id, contact_id). Repliz sorts newest first, so the first chat
+      // per participant is the most recent and later ones are dropped.
+      if (seenParticipants.has(chat.senderId)) continue;
+      seenParticipants.add(chat.senderId);
+      if (known.has(chat._id)) continue;
+      if (await importConversation({ supabase, workspaceId, channel, chat })) {
         imported++;
       }
     }
 
-    const pagination = res.data?.pagination;
-    if (!pagination?.hasMore || !pagination.nextCursor) break;
-    cursor = pagination.nextCursor;
+    if (!res.hasNextPage || chats.length === 0) break;
   }
 
   return imported;
@@ -207,31 +192,35 @@ async function importConversation({
   supabase,
   workspaceId,
   channel,
-  conv,
+  chat,
 }: {
   supabase: SupabaseClient;
   workspaceId: string;
   channel: BackfillChannel;
-  conv: ZernioInboxConversation;
+  chat: ReplizChat;
 }): Promise<boolean> {
-  const interactionAt = conv.updatedTime ?? new Date().toISOString();
+  const interactionAt = chat.updatedAt ?? new Date().toISOString();
   const contact = await upsertContactForSender({
     supabase,
     channel: { id: channel.id, workspace_id: workspaceId },
-    senderId: conv.participantId!,
-    senderName: conv.participantName || conv.participantId!,
-    senderPicture: conv.participantPicture || null,
+    senderId: chat.senderId,
+    senderName: chat.senderName || chat.senderId,
+    senderPicture: chat.senderPicture || null,
     interactionAt,
     stampExisting: false,
   });
 
   if (!contact) {
-    console.error(`[inbox-sync] failed to create contact for conversation ${conv.id}`);
+    console.error(`[inbox-sync] failed to create contact for chat ${chat._id}`);
     return false;
   }
 
+  const lastText =
+    chat.lastMessage?.text ||
+    (chat.lastMessage?.type ? `[${chat.lastMessage.type}]` : "");
+
   // ignoreDuplicates: an existing (channel_id, contact_id) row is owned by the
-  // webhook (possibly under a different late_conversation_id) and must stay
+  // webhook (possibly under a different repliz_chat_id) and must stay
   // untouched; the conflict then returns no rows, so it is not counted as
   // imported either.
   const { data: insertedRows, error } = await supabase
@@ -242,18 +231,18 @@ async function importConversation({
         channel_id: channel.id,
         contact_id: contact.contactId,
         platform: channel.platform,
-        late_conversation_id: conv.id,
-        status: conv.status === "archived" ? "closed" : "open",
-        last_message_at: conv.updatedTime ?? null,
-        last_message_preview: messagePreview(conv.lastMessage),
-        unread_count: conv.unreadCount ?? 0,
+        repliz_chat_id: chat._id,
+        status: "open",
+        last_message_at: chat.updatedAt ?? null,
+        last_message_preview: messagePreview(lastText),
+        unread_count: chat.unreadCount ?? 0,
       },
       { onConflict: "channel_id,contact_id", ignoreDuplicates: true }
     )
     .select("id");
 
   if (error) {
-    console.error(`[inbox-sync] failed to upsert conversation ${conv.id}:`, error);
+    console.error(`[inbox-sync] failed to upsert conversation ${chat._id}:`, error);
     return false;
   }
 

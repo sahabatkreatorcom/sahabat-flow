@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createServiceClient();
 
-  // Prune the webhook idempotency ledger; ids only matter for Zernio's retry
-  // window (hours), so anything older than 48h is dead weight.
+  // Prune the webhook idempotency ledger; duplicate deliveries only matter for
+  // a short window, so anything older than 48h is dead weight.
   await supabase
     .from("webhook_events")
     .delete()
@@ -379,8 +379,8 @@ async function processJob(
         conversationId: string;
         workspaceId: string;
         nodeId: string;
-        lateConversationId?: string | null;
-        lateAccountId?: string | null;
+        replizChatId?: string | null;
+        replizAccountId?: string | null;
         variables?: Record<string, string> | null;
       };
 
@@ -448,8 +448,8 @@ async function processJob(
           contactId: payload.contactId,
           conversationId: payload.conversationId,
           workspaceId: payload.workspaceId,
-          lateConversationId: payload.lateConversationId || undefined,
-          lateAccountId: payload.lateAccountId || undefined,
+          replizChatId: payload.replizChatId || undefined,
+          replizAccountId: payload.replizAccountId || undefined,
           variables: payload.variables || undefined,
           incomingMessage: {},
         });
@@ -544,33 +544,38 @@ async function processJob(
 
       if (recipient.status !== "pending") return;
 
-      // Get workspace API key
+      // Get workspace Repliz credentials
       const broadcast = recipient.broadcasts as { workspace_id: string } | null;
       if (!broadcast) return;
 
       const { data: workspace } = await supabase
         .from("workspaces")
-        .select("late_api_key_encrypted")
+        .select("repliz_access_key_encrypted, repliz_secret_key_encrypted")
         .eq("id", broadcast.workspace_id)
         .single();
 
-      if (!workspace?.late_api_key_encrypted) return;
+      if (
+        !workspace?.repliz_access_key_encrypted ||
+        !workspace.repliz_secret_key_encrypted
+      ) {
+        return;
+      }
 
-      const { createZernioClient } = await import("@/lib/zernio-client");
-      const zernio = createZernioClient(workspace.late_api_key_encrypted);
+      const { createReplizClient } = await import("@/lib/repliz-client");
+      const repliz = createReplizClient(
+        workspace.repliz_access_key_encrypted,
+        workspace.repliz_secret_key_encrypted
+      );
 
-      const channel = recipient.channels as { late_account_id: string } | null;
-      if (!channel) return;
-
-      // Get the conversation for this contact+channel (need late_conversation_id)
+      // Get the conversation for this contact+channel (need repliz_chat_id)
       const { data: conv } = await supabase
         .from("conversations")
-        .select("late_conversation_id")
+        .select("repliz_chat_id")
         .eq("contact_id", recipient.contact_id)
         .eq("channel_id", recipient.channel_id)
         .single();
 
-      if (!conv?.late_conversation_id) return;
+      if (!conv?.repliz_chat_id) return;
 
       const broadcastData = recipient.broadcasts as { message_content: { text?: string } } | null;
       const messageContent = broadcastData?.message_content;
@@ -594,9 +599,9 @@ async function processJob(
       if (!sendClaim || sendClaim.length === 0) return;
 
       try {
-        await zernio.messages.sendInboxMessage({
-          path: { conversationId: conv.late_conversation_id },
-          body: { accountId: channel.late_account_id, message: messageContent?.text || "" },
+        await repliz.chats.send(conv.repliz_chat_id, {
+          type: "text",
+          text: messageContent?.text || "",
         });
 
         await supabase

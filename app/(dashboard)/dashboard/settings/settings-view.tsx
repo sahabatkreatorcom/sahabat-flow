@@ -25,8 +25,11 @@ interface WorkspaceSettings {
   id: string;
   name: string;
   hasApiKey: boolean;
+  hasSecretKey: boolean;
   hasAiKey: boolean;
   globalKeywords: string[];
+  webhookUrl: string;
+  webhookToken: string;
 }
 
 interface TestResult {
@@ -43,6 +46,13 @@ export function SettingsView({
   const [name, setName] = useState(workspace.name);
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
+  const [secretKey, setSecretKey] = useState("");
+  const [showSecretKey, setShowSecretKey] = useState(false);
+  const [webhook, setWebhook] = useState({
+    url: workspace.webhookUrl,
+    token: workspace.webhookToken,
+  });
+  const [copied, setCopied] = useState<"url" | "token" | null>(null);
   const [aiKey, setAiKey] = useState("");
   const [showAiKey, setShowAiKey] = useState(false);
   const [keywords, setKeywords] = useState<string[]>(workspace.globalKeywords);
@@ -69,8 +79,9 @@ export function SettingsView({
   }
 
   async function handleTestConnection() {
-    const keyToTest = apiKey.trim();
-    if (!keyToTest) return;
+    const accessKeyToTest = apiKey.trim();
+    const secretKeyToTest = secretKey.trim();
+    if (!accessKeyToTest || !secretKeyToTest) return;
 
     setTesting(true);
     setTestResult(null);
@@ -79,7 +90,11 @@ export function SettingsView({
       const res = await fetch("/api/v1/channels/test-key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: keyToTest, workspaceId: workspace.id }),
+        body: JSON.stringify({
+          accessKey: accessKeyToTest,
+          secretKey: secretKeyToTest,
+          workspaceId: workspace.id,
+        }),
       });
 
       const data = await res.json();
@@ -98,12 +113,17 @@ export function SettingsView({
         accountCount: accounts.length,
       });
 
-      // Key was saved and channels synced server-side
+      if (data.webhook?.url) {
+        setWebhook({ url: data.webhook.url, token: data.webhook.token });
+      }
+
+      // Credentials were saved and channels synced server-side
       setApiKey("");
+      setSecretKey("");
     } catch {
       setTestResult({
         success: false,
-        error: "Could not reach the Zernio API. Please check your network connection.",
+        error: "Could not reach the messaging API. Please check your network connection.",
       });
     } finally {
       setTesting(false);
@@ -126,7 +146,10 @@ export function SettingsView({
 
       // Only update keys if user entered new ones
       if (apiKey.trim()) {
-        update.late_api_key_encrypted = apiKey.trim();
+        update.repliz_access_key_encrypted = apiKey.trim();
+      }
+      if (secretKey.trim()) {
+        update.repliz_secret_key_encrypted = secretKey.trim();
       }
       if (aiKey.trim()) {
         update.ai_api_key = aiKey.trim();
@@ -146,6 +169,7 @@ export function SettingsView({
 
       setSaved(true);
       setApiKey("");
+      setSecretKey("");
       setAiKey("");
       setTestResult(null);
       setTimeout(() => setSaved(false), 3000);
@@ -191,52 +215,57 @@ export function SettingsView({
 
           <hr className="border-border" />
 
-          {/* Zernio API Key */}
+          {/* Repliz credentials */}
           <section>
             <div className="flex items-center gap-2">
               <Key className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">Zernio API Key</h2>
+              <h2 className="text-sm font-semibold">Messaging API Credentials</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Your Zernio API key is used to connect with social media platforms.
-              {workspace.hasApiKey && " A key is currently configured."}
+              Sahabat Kreator connects your social accounts through Repliz. Enter
+              the Access Key and Secret Key from your Repliz workspace.
+              {workspace.hasApiKey && workspace.hasSecretKey
+                ? " Credentials are currently configured."
+                : ""}
             </p>
             <p className="mt-1.5 text-xs text-muted-foreground">
-              You can get your API key from your{" "}
+              Find them in{" "}
               <a
-                href="https://zernio.com/dashboard/settings/api"
+                href="https://docs.repliz.com/api/install.html"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-0.5 text-primary underline underline-offset-2 hover:opacity-80"
               >
-                Zernio dashboard
+                the Repliz API docs
                 <ExternalLink className="h-3 w-3" />
               </a>
               . Sign up at{" "}
               <a
-                href="https://zernio.com"
+                href="https://repliz.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline underline-offset-2 hover:opacity-80"
               >
-                zernio.com
+                repliz.com
               </a>{" "}
               if you don&apos;t have an account yet.
             </p>
 
-            <div className="mt-4 relative">
+            <label className="mt-4 block text-xs font-medium text-muted-foreground">
+              Access Key
+            </label>
+            <div className="mt-1.5 relative">
               <input
                 type={showApiKey ? "text" : "password"}
                 value={apiKey}
                 onChange={(e) => {
                   setApiKey(e.target.value);
-                  // Clear test result when key changes
                   if (testResult) setTestResult(null);
                 }}
                 placeholder={
                   workspace.hasApiKey
-                    ? "Enter a new key to replace the current one"
-                    : "Enter your Zernio API key"
+                    ? "Enter a new Access Key to replace the current one"
+                    : "Enter your Access Key"
                 }
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm font-mono placeholder:text-muted-foreground placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-ring"
               />
@@ -253,11 +282,42 @@ export function SettingsView({
               </button>
             </div>
 
+            <label className="mt-3 block text-xs font-medium text-muted-foreground">
+              Secret Key
+            </label>
+            <div className="mt-1.5 relative">
+              <input
+                type={showSecretKey ? "text" : "password"}
+                value={secretKey}
+                onChange={(e) => {
+                  setSecretKey(e.target.value);
+                  if (testResult) setTestResult(null);
+                }}
+                placeholder={
+                  workspace.hasSecretKey
+                    ? "Enter a new Secret Key to replace the current one"
+                    : "Enter your Secret Key"
+                }
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm font-mono placeholder:text-muted-foreground placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecretKey(!showSecretKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showSecretKey ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+
             {/* Test Connection button */}
             <div className="mt-3 flex items-center gap-3">
               <button
                 onClick={handleTestConnection}
-                disabled={!apiKey.trim() || testing}
+                disabled={!apiKey.trim() || !secretKey.trim() || testing}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {testing ? (
@@ -284,12 +344,70 @@ export function SettingsView({
               )}
             </div>
 
-            {workspace.hasApiKey && !testResult && (
+            {workspace.hasApiKey && workspace.hasSecretKey && !testResult && (
               <p className="mt-1.5 flex items-center gap-1 text-xs text-green-600">
                 <Check className="h-3 w-3" />
-                API key configured
+                Credentials configured
               </p>
             )}
+          </section>
+
+          <hr className="border-border" />
+
+          {/* Repliz webhook */}
+          <section>
+            <div className="flex items-center gap-2">
+              <Plug className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Webhook</h2>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Paste this URL and token into your Repliz webhook settings so
+              inbound DMs and comments reach Sahabat Kreator.
+            </p>
+
+            <label className="mt-4 block text-xs font-medium text-muted-foreground">
+              Webhook URL
+            </label>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                readOnly
+                value={webhook.url}
+                className="w-full rounded-lg border border-input bg-muted px-3 py-2 text-xs font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(webhook.url);
+                  setCopied("url");
+                  setTimeout(() => setCopied(null), 2000);
+                }}
+                className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-muted"
+              >
+                {copied === "url" ? "Copied" : "Copy"}
+              </button>
+            </div>
+
+            <label className="mt-3 block text-xs font-medium text-muted-foreground">
+              Webhook Token (x-token)
+            </label>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                readOnly
+                value={webhook.token}
+                className="w-full rounded-lg border border-input bg-muted px-3 py-2 text-xs font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(webhook.token);
+                  setCopied("token");
+                  setTimeout(() => setCopied(null), 2000);
+                }}
+                className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-muted"
+              >
+                {copied === "token" ? "Copied" : "Copy"}
+              </button>
+            </div>
           </section>
 
           <hr className="border-border" />

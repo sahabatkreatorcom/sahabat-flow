@@ -57,15 +57,11 @@ interface AdaptedMessage {
   };
 }
 
-/** Meta caps WhatsApp interactive replies at three buttons. */
-const WHATSAPP_MAX_REPLY_BUTTONS = 3;
-
 /**
  * Adapts rich message content to work across different platforms.
  * Facebook/Instagram: Full support for quick replies, buttons, carousels.
- * WhatsApp: Reply buttons only, so carousels and link buttons become text.
  * Telegram: Buttons become inline keyboard, carousels become multiple messages.
- * Twitter/X, Bluesky, Reddit: Interactive elements become numbered text options.
+ * TikTok: Interactive elements become numbered text options.
  */
 export function adaptMessage(
   content: MessageContent,
@@ -75,13 +71,9 @@ export function adaptMessage(
     case "facebook":
     case "instagram":
       return adaptForMeta(content);
-    case "whatsapp":
-      return adaptForWhatsApp(content);
     case "telegram":
       return adaptForTelegram(content);
-    case "twitter":
-    case "bluesky":
-    case "reddit":
+    case "tiktok":
     default:
       return adaptForTextOnly(content);
   }
@@ -121,30 +113,6 @@ function adaptForMeta(content: MessageContent): AdaptedMessage {
   }
 
   return result;
-}
-
-/**
- * WhatsApp has no generic template and its interactive replies carry a payload
- * but no URL, so a carousel, a link button, or a fourth option would either be
- * rejected by Meta or arrive with the link stripped. Those degrade to text.
- */
-function adaptForWhatsApp(content: MessageContent): AdaptedMessage {
-  if (content.carousel?.elements?.length) {
-    return adaptCarouselToText(
-      content.carousel.elements,
-      content.text || "",
-      content.imageUrl
-    );
-  }
-
-  const hasLinkButton = content.buttons?.some((btn) => btn.type === "url");
-  const overflows =
-    (content.buttons?.length ?? 0) > WHATSAPP_MAX_REPLY_BUTTONS ||
-    (content.quickReplies?.length ?? 0) > WHATSAPP_MAX_REPLY_BUTTONS;
-
-  return hasLinkButton || overflows
-    ? adaptForTextOnly(content)
-    : adaptForMeta(content);
 }
 
 function adaptForTelegram(content: MessageContent): AdaptedMessage {

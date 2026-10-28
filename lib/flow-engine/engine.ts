@@ -19,7 +19,8 @@ import type {
 } from "./types";
 import { executeAiResponse } from "./nodes/ai-response";
 import { adaptMessage } from "./platform-adapter";
-import { createZernioClient } from "@/lib/zernio-client";
+import { createReplizClient } from "@/lib/repliz-client";
+import { buildReplizMessages } from "@/lib/repliz-message";
 
 export async function executeFlow(
   supabase: SupabaseClient<Database>,
@@ -64,28 +65,28 @@ export async function executeFlow(
   const nodes = flow.nodes as unknown as FlowNode[];
   const edges = flow.edges as unknown as FlowEdge[];
 
-  // Get channel platform and late_account_id
+  // Get channel platform and repliz_account_id
   const { data: channel } = await supabase
     .from("channels")
-    .select("platform, late_account_id")
+    .select("platform, repliz_account_id")
     .eq("id", context.channelId)
     .single();
 
   context.platform = channel?.platform as FlowExecutionContext["platform"];
-  if (channel?.late_account_id && !context.lateAccountId) {
-    context.lateAccountId = channel.late_account_id;
+  if (channel?.repliz_account_id && !context.replizAccountId) {
+    context.replizAccountId = channel.repliz_account_id;
   }
 
-  // Resolve late_conversation_id from the conversation record if not already set
-  if (!context.lateConversationId && context.conversationId) {
+  // Resolve repliz_chat_id from the conversation record if not already set
+  if (!context.replizChatId && context.conversationId) {
     const { data: conversation } = await supabase
       .from("conversations")
-      .select("late_conversation_id")
+      .select("repliz_chat_id")
       .eq("id", context.conversationId)
       .single();
 
-    if (conversation?.late_conversation_id) {
-      context.lateConversationId = conversation.late_conversation_id;
+    if (conversation?.repliz_chat_id) {
+      context.replizChatId = conversation.repliz_chat_id;
     }
   }
 
@@ -168,25 +169,25 @@ export async function resumeSession(
 
   const { data: channel } = await supabase
     .from("channels")
-    .select("platform, late_account_id")
+    .select("platform, repliz_account_id")
     .eq("id", context.channelId)
     .single();
 
   context.platform = channel?.platform as FlowExecutionContext["platform"];
-  if (channel?.late_account_id && !context.lateAccountId) {
-    context.lateAccountId = channel.late_account_id;
+  if (channel?.repliz_account_id && !context.replizAccountId) {
+    context.replizAccountId = channel.repliz_account_id;
   }
 
-  // Resolve late_conversation_id if not set
-  if (!context.lateConversationId && context.conversationId) {
+  // Resolve repliz_chat_id if not set
+  if (!context.replizChatId && context.conversationId) {
     const { data: conversation } = await supabase
       .from("conversations")
-      .select("late_conversation_id")
+      .select("repliz_chat_id")
       .eq("id", context.conversationId)
       .single();
 
-    if (conversation?.late_conversation_id) {
-      context.lateConversationId = conversation.late_conversation_id;
+    if (conversation?.repliz_chat_id) {
+      context.replizChatId = conversation.repliz_chat_id;
     }
   }
 
@@ -376,10 +377,10 @@ async function executeNode(
 
 async function sendFirstMessageAsPrivateReply(
   supabase: SupabaseClient<Database>,
-  zernio: ReturnType<typeof createZernioClient>,
+  repliz: ReturnType<typeof createReplizClient>,
   data: SendMessageNodeData,
   context: FlowExecutionContext,
-  lateAccountId: string
+  replizAccountId: string
 ) {
   const first = data.messages[0];
   if (!first) return;
@@ -389,13 +390,15 @@ async function sendFirstMessageAsPrivateReply(
     context.variables || {}
   );
 
+  const postId = context.variables?.post_id;
+  const commentId = context.variables?.comment_id;
+  if (!postId || !commentId) return;
+
   try {
-    await zernio.comments.sendPrivateReplyToComment({
-      path: {
-        postId: String(context.variables!.post_id),
-        commentId: String(context.variables!.comment_id),
-      },
-      body: { accountId: lateAccountId, message: text },
+    await repliz.comments.sendPrivateReply(String(postId), {
+      accountId: replizAccountId,
+      commentId: String(commentId),
+      text,
     });
 
     await supabase.from("messages").insert({
@@ -436,102 +439,98 @@ async function executeSendMessage(
   data: SendMessageNodeData,
   context: FlowExecutionContext
 ) {
-  // Get workspace for API key
+  // Get workspace for Repliz credentials
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("late_api_key_encrypted")
+    .select("repliz_access_key_encrypted, repliz_secret_key_encrypted")
     .eq("id", context.workspaceId)
     .single();
 
-  if (!workspace?.late_api_key_encrypted) return;
+  if (
+    !workspace?.repliz_access_key_encrypted ||
+    !workspace.repliz_secret_key_encrypted
+  ) {
+    return;
+  }
 
-  const zernio = createZernioClient(workspace.late_api_key_encrypted);
+  const repliz = createReplizClient(
+    workspace.repliz_access_key_encrypted,
+    workspace.repliz_secret_key_encrypted
+  );
 
-  // Resolve late_account_id from channel if not in context
-  let lateAccountId = context.lateAccountId;
-  if (!lateAccountId) {
+  // Resolve repliz_account_id from channel if not in context
+  let replizAccountId = context.replizAccountId;
+  if (!replizAccountId) {
     const { data: channel } = await supabase
       .from("channels")
-      .select("late_account_id, platform")
+      .select("repliz_account_id, platform")
       .eq("id", context.channelId)
       .single();
 
     if (!channel) return;
-    lateAccountId = channel.late_account_id;
+    replizAccountId = channel.repliz_account_id;
     if (!context.platform) {
       context.platform = channel.platform as FlowExecutionContext["platform"];
     }
   }
 
-  // Resolve late_conversation_id from conversation if not in context
-  let lateConversationId = context.lateConversationId;
-  if (!lateConversationId) {
+  // Resolve repliz_chat_id from conversation if not in context
+  let replizChatId = context.replizChatId;
+  if (!replizChatId) {
     const { data: conversation } = await supabase
       .from("conversations")
-      .select("late_conversation_id")
+      .select("repliz_chat_id")
       .eq("id", context.conversationId)
       .single();
 
-    if (!conversation?.late_conversation_id) {
+    if (!conversation?.repliz_chat_id) {
       // Comment-triggered flows have no DM conversation yet. Instagram allows
       // exactly one private reply per comment, so deliver the first message via
       // the private-reply endpoint instead of silently dropping the whole node
       // (users build comment flows with plain Send Message nodes, not Private Reply).
-      if (context.variables?.comment_id && context.variables?.post_id && lateAccountId) {
-        await sendFirstMessageAsPrivateReply(supabase, zernio, data, context, lateAccountId);
+      if (context.variables?.comment_id && context.variables?.post_id && replizAccountId) {
+        await sendFirstMessageAsPrivateReply(supabase, repliz, data, context, replizAccountId);
         return;
       }
-      console.error("No late_conversation_id found for conversation:", context.conversationId);
+      console.error("No repliz_chat_id found for conversation:", context.conversationId);
       return;
     }
-    lateConversationId = conversation.late_conversation_id;
+    replizChatId = conversation.repliz_chat_id;
   }
 
   for (const msg of data.messages) {
-    const adapted = adaptMessage(msg, context.platform!);
-    const text = interpolateVariables(adapted.text, context.variables || {});
+    // Media (image/video/audio) is platform-agnostic, so read it from the raw
+    // message. `mediaUrl` + `mediaType` supersede the legacy image-only `imageUrl`.
+    const rawMsg = msg as { mediaUrl?: string; mediaType?: string; imageUrl?: string };
+    const mediaUrl = rawMsg.mediaUrl || rawMsg.imageUrl;
+    const mediaType = rawMsg.mediaType || (rawMsg.imageUrl ? "image" : undefined);
+    const text = interpolateVariables(msg.text || "", context.variables || {});
+
+    const attachments = mediaUrl
+      ? [{ type: mediaType || "image", url: mediaUrl }]
+      : undefined;
+
+    // Repliz accepts one message type per request, so rich content becomes a
+    // short sequence (text, then image or link buttons).
+    const bodies = buildReplizMessages({
+      platform: context.platform,
+      text,
+      imageUrl: msg.imageUrl,
+      mediaUrl: rawMsg.mediaUrl,
+      mediaType,
+      quickReplies: msg.quickReplies,
+      buttons: msg.buttons,
+      carousel: msg.carousel,
+    });
+
+    if (!bodies.length) continue;
 
     try {
-      // Media (image/video/audio) is platform-agnostic, so read it from the raw
-      // message. `mediaUrl` + `mediaType` supersede the legacy image-only `imageUrl`.
-      const rawMsg = msg as { mediaUrl?: string; mediaType?: string; imageUrl?: string };
-      const mediaUrl = rawMsg.mediaUrl || rawMsg.imageUrl;
-      const mediaType = rawMsg.mediaType || (rawMsg.imageUrl ? "image" : undefined);
-
-      const attachments = mediaUrl
-        ? [{ type: mediaType || "image", url: mediaUrl }]
-        : undefined;
-
-      // Build the API body with rich messaging fields
-      const body: Record<string, unknown> = {
-        accountId: lateAccountId,
-        message: text,
-      };
-      // Actually send the media to the recipient. Previously the attachment was only
-      // stored locally and never included in the send body, so flow media never
-      // reached the contact.
-      if (mediaUrl) {
-        body.attachmentUrl = mediaUrl;
-        body.attachmentType = mediaType || "image";
+      let platformMessageId: string | null = null;
+      for (const body of bodies) {
+        const response = await repliz.chats.send(replizChatId, body);
+        platformMessageId = response.messageId ?? platformMessageId;
       }
-
-      if (adapted.buttons?.length) {
-        body.buttons = adapted.buttons;
-      }
-      if (adapted.quickReplies?.length) {
-        body.quickReplies = adapted.quickReplies;
-      }
-      if (adapted.template) {
-        body.template = adapted.template;
-      }
-      if (adapted.replyMarkup) {
-        body.replyMarkup = adapted.replyMarkup;
-      }
-
-      const response = await zernio.messages.sendInboxMessage({
-        path: { conversationId: lateConversationId },
-        body: body as Parameters<typeof zernio.messages.sendInboxMessage>[0]["body"],
-      });
 
       // Store outbound message
       await supabase.from("messages").insert({
@@ -541,7 +540,7 @@ async function executeSendMessage(
         attachments: attachments || null,
         sent_by_flow_id: context.flowId,
         sent_by_node_id: null,
-        platform_message_id: response.data?.data?.messageId || null,
+        platform_message_id: platformMessageId,
         status: "sent",
       });
 
@@ -680,8 +679,8 @@ async function executeDelay(
       contactId: context.contactId,
       conversationId: context.conversationId,
       workspaceId: context.workspaceId,
-      lateConversationId: context.lateConversationId || null,
-      lateAccountId: context.lateAccountId || null,
+      replizChatId: context.replizChatId || null,
+      replizAccountId: context.replizAccountId || null,
       variables: context.variables || {},
     },
     run_at: runAt,
@@ -857,8 +856,9 @@ function executeABSplit(data: ABSplitNodeData): string {
 }
 
 /**
- * Post a public reply to the comment that triggered this flow.
- * Uses the comment_id and post_id variables set by the comment processor.
+ * Post a public reply to the comment that triggered this flow. Repliz's reply
+ * endpoint is keyed by its own comment `_id`, which the comment processor
+ * stores in `repliz_comment_id`.
  */
 async function executeCommentReply(
   supabase: SupabaseClient<Database>,
@@ -867,50 +867,38 @@ async function executeCommentReply(
 ) {
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("late_api_key_encrypted")
+    .select("repliz_access_key_encrypted, repliz_secret_key_encrypted")
     .eq("id", context.workspaceId)
     .single();
 
-  if (!workspace?.late_api_key_encrypted) return;
-
-  const zernio = createZernioClient(workspace.late_api_key_encrypted);
-
-  // Resolve late_account_id
-  let lateAccountId = context.lateAccountId;
-  if (!lateAccountId) {
-    const { data: channel } = await supabase
-      .from("channels")
-      .select("late_account_id")
-      .eq("id", context.channelId)
-      .single();
-
-    if (!channel) return;
-    lateAccountId = channel.late_account_id;
+  if (
+    !workspace?.repliz_access_key_encrypted ||
+    !workspace.repliz_secret_key_encrypted
+  ) {
+    return;
   }
 
-  const commentId = context.variables?.comment_id || context.incomingMessage.sender?.id;
-  if (!commentId) return;
-
-  const postId = context.variables?.post_id;
-  if (!postId) {
-    console.error("No post_id in context variables for commentReply node");
+  const replizCommentId = context.variables?.repliz_comment_id;
+  if (!replizCommentId) {
+    console.error("No repliz_comment_id in context variables for commentReply node");
     return;
   }
 
   const text = interpolateVariables(data.text, context.variables || {});
 
   try {
-    await zernio.comments.replyToInboxPost({
-      path: { postId },
-      body: { accountId: lateAccountId, message: text, commentId },
-    });
+    const repliz = createReplizClient(
+      workspace.repliz_access_key_encrypted,
+      workspace.repliz_secret_key_encrypted
+    );
+    await repliz.comments.reply(String(replizCommentId), text);
   } catch (error) {
     console.error("Failed to post comment reply:", error);
   }
 }
 
 /**
- * Send a private DM to the commenter via the Zernio API's private reply endpoint.
+ * Send a private DM to the commenter via Repliz's private-reply endpoint.
  * This creates a DM conversation from a comment context.
  */
 async function executePrivateReply(
@@ -920,25 +908,33 @@ async function executePrivateReply(
 ) {
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("late_api_key_encrypted")
+    .select("repliz_access_key_encrypted, repliz_secret_key_encrypted")
     .eq("id", context.workspaceId)
     .single();
 
-  if (!workspace?.late_api_key_encrypted) return;
+  if (
+    !workspace?.repliz_access_key_encrypted ||
+    !workspace.repliz_secret_key_encrypted
+  ) {
+    return;
+  }
 
-  const zernio = createZernioClient(workspace.late_api_key_encrypted);
+  const repliz = createReplizClient(
+    workspace.repliz_access_key_encrypted,
+    workspace.repliz_secret_key_encrypted
+  );
 
-  // Resolve late_account_id
-  let lateAccountId = context.lateAccountId;
-  if (!lateAccountId) {
+  // Resolve repliz_account_id
+  let replizAccountId = context.replizAccountId;
+  if (!replizAccountId) {
     const { data: channel } = await supabase
       .from("channels")
-      .select("late_account_id")
+      .select("repliz_account_id")
       .eq("id", context.channelId)
       .single();
 
     if (!channel) return;
-    lateAccountId = channel.late_account_id;
+    replizAccountId = channel.repliz_account_id;
   }
 
   const commentId = context.variables?.comment_id || context.incomingMessage.sender?.id;
@@ -953,9 +949,10 @@ async function executePrivateReply(
   const text = interpolateVariables(data.text, context.variables || {});
 
   try {
-    await zernio.comments.sendPrivateReplyToComment({
-      path: { postId, commentId },
-      body: { accountId: lateAccountId, message: text },
+    await repliz.comments.sendPrivateReply(String(postId), {
+      accountId: replizAccountId,
+      commentId: String(commentId),
+      text,
     });
 
     await supabase.from("messages").insert({

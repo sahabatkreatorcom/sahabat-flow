@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createZernioClient } from "@/lib/zernio-client";
+import { createReplizClient } from "@/lib/repliz-client";
 import { PLATFORMS, isSupportedPlatform } from "@/lib/platforms";
 
 async function getWorkspace(supabase: Awaited<ReturnType<typeof createClient>>) {
@@ -23,9 +23,8 @@ async function getWorkspace(supabase: Awaited<ReturnType<typeof createClient>>) 
 /**
  * POST /api/v1/channels/connect
  *
- * Returns Zernio's OAuth/connect URL for the given platform.
- * Zernio handles the entire connection flow (OAuth, page selection, etc.)
- * and redirects back to our callback URL when done.
+ * Starts a Repliz connection. Instagram and TikTok use the OAuth redirect
+ * flow; Telegram uses the QR session flow.
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -33,9 +32,12 @@ export async function POST(request: NextRequest) {
   if (!workspace)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!workspace.late_api_key_encrypted) {
+  if (
+    !workspace.repliz_access_key_encrypted ||
+    !workspace.repliz_secret_key_encrypted
+  ) {
     return NextResponse.json(
-      { error: "Zernio API key not configured. Go to Settings first." },
+      { error: "Messaging credentials not configured. Go to Settings first." },
       { status: 400 }
     );
   }
@@ -49,36 +51,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const zernio = createZernioClient(workspace.late_api_key_encrypted);
+  const repliz = createReplizClient(
+    workspace.repliz_access_key_encrypted,
+    workspace.repliz_secret_key_encrypted
+  );
 
   try {
-    // Get profile ID (required by Zernio's connect endpoint)
-    const profilesRes = await zernio.profiles.listProfiles();
-    const profiles = profilesRes.data?.profiles ?? [];
-    if (profiles.length === 0) {
-      return NextResponse.json(
-        { error: "No Zernio profiles found. Create one in your Zernio dashboard first." },
-        { status: 400 }
-      );
+    if (platform === "telegram") {
+      const token = await repliz.accounts.createSession("telegram");
+      return NextResponse.json({ mode: "qr", platform, token });
     }
 
-    const profileId = profiles[0]._id!;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const callbackUrl = `${appUrl}/dashboard/channels/callback`;
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+    const callbackUrl = `${appUrl}/dashboard/channels/callback?platform=${platform}`;
+    const authUrl = await repliz.accounts.authorize(platform, callbackUrl);
 
-    // Zernio handles everything: OAuth, page selection, Bluesky credentials, Telegram code
-    const res = await zernio.connect.getConnectUrl({
-      path: { platform },
-      query: { profileId, redirect_url: callbackUrl },
-    });
-
-    if (!res.data?.authUrl) {
-      return NextResponse.json({ error: "Failed to get connect URL" }, { status: 500 });
-    }
-
-    return NextResponse.json({ authUrl: res.data.authUrl });
+    return NextResponse.json({ mode: "oauth", platform, authUrl });
   } catch (error) {
-    console.error("Failed to get connect URL:", error);
+    console.error("Failed to start Repliz connection:", error);
     return NextResponse.json(
       { error: `Connection failed: ${error instanceof Error ? error.message : String(error)}` },
       { status: 500 }

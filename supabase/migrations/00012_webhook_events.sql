@@ -1,7 +1,7 @@
--- Idempotency ledger for inbound Zernio webhook deliveries. Zernio retries a
--- delivery with the same event id whenever our 200 doesn't arrive within its 5s
--- timeout; /api/webhooks/late claims the id here before processing so retries
--- and redeliveries never re-run a flow (which was double-sending DMs).
+-- Idempotency ledger for inbound Repliz webhook deliveries. Repliz does not
+-- retry, but a delivery can still be duplicated or arrive out of order, so the
+-- receiver claims the event id here before processing to avoid re-running a
+-- flow (which would double-send DMs).
 CREATE TABLE IF NOT EXISTS webhook_events (
   event_id TEXT PRIMARY KEY,
   received_at TIMESTAMPTZ NOT NULL DEFAULT now()

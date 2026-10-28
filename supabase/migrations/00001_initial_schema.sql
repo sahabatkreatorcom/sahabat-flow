@@ -8,7 +8,7 @@ create table workspaces (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   slug text not null unique,
-  late_api_key_encrypted text,
+  repliz_access_key_encrypted text,
   global_keywords jsonb default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -31,7 +31,7 @@ create table channels (
   id uuid primary key default uuid_generate_v4(),
   workspace_id uuid not null references workspaces(id) on delete cascade,
   platform text not null check (platform in ('facebook', 'instagram', 'twitter', 'telegram', 'bluesky', 'reddit')),
-  late_account_id text not null,
+  repliz_account_id text not null,
   username text,
   display_name text,
   profile_picture text,
@@ -40,7 +40,7 @@ create table channels (
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (workspace_id, late_account_id)
+  unique (workspace_id, repliz_account_id)
 );
 
 create index idx_channels_workspace on channels(workspace_id);
@@ -171,7 +171,7 @@ create table conversations (
   workspace_id uuid not null references workspaces(id) on delete cascade,
   channel_id uuid not null references channels(id) on delete cascade,
   contact_id uuid not null references contacts(id) on delete cascade,
-  late_conversation_id text,
+  repliz_chat_id text,
   platform text not null,
   status text not null default 'open' check (status in ('open', 'closed', 'snoozed')),
   assigned_to uuid references auth.users(id) on delete set null,

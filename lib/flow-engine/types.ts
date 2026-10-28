@@ -161,10 +161,10 @@ export interface FlowExecutionContext {
   contactId: string;
   conversationId: string;
   workspaceId: string;
-  /** The Zernio API conversation ID (from conversations.late_conversation_id) */
-  lateConversationId?: string;
-  /** The Zernio API account ID (from channels.late_account_id) */
-  lateAccountId?: string;
+  /** The Repliz chat ID (from conversations.repliz_chat_id) */
+  replizChatId?: string;
+  /** The Repliz account ID (from channels.repliz_account_id) */
+  replizAccountId?: string;
   incomingMessage: {
     text?: string;
     postbackPayload?: string;

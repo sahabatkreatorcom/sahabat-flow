@@ -1,5 +1,5 @@
 -- =============================================
--- ZERNFLOW - COMBINED MIGRATIONS
+-- SAHABAT KREATOR - COMBINED MIGRATIONS
 -- Generated from supabase/migrations/*.sql, in order.
 -- Paste this entire file into Supabase SQL Editor
 -- https://supabase.com/dashboard/project/_/sql/new
@@ -18,7 +18,7 @@ create table workspaces (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   slug text not null unique,
-  late_api_key_encrypted text,
+  repliz_access_key_encrypted text,
   global_keywords jsonb default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -41,7 +41,7 @@ create table channels (
   id uuid primary key default uuid_generate_v4(),
   workspace_id uuid not null references workspaces(id) on delete cascade,
   platform text not null check (platform in ('facebook', 'instagram', 'twitter', 'telegram', 'bluesky', 'reddit')),
-  late_account_id text not null,
+  repliz_account_id text not null,
   username text,
   display_name text,
   profile_picture text,
@@ -50,7 +50,7 @@ create table channels (
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (workspace_id, late_account_id)
+  unique (workspace_id, repliz_account_id)
 );
 
 create index idx_channels_workspace on channels(workspace_id);
@@ -181,7 +181,7 @@ create table conversations (
   workspace_id uuid not null references workspaces(id) on delete cascade,
   channel_id uuid not null references channels(id) on delete cascade,
   contact_id uuid not null references contacts(id) on delete cascade,
-  late_conversation_id text,
+  repliz_chat_id text,
   platform text not null,
   status text not null default 'open' check (status in ('open', 'closed', 'snoozed')),
   assigned_to uuid references auth.users(id) on delete set null,
@@ -963,18 +963,17 @@ create policy "flow_versions_insert" on flow_versions for insert
 -- ============================================================
 -- MIGRATION 11: WORKSPACE WEBHOOK SECRET
 -- ============================================================
--- Add workspace-level webhook secret for Zernio HMAC signature verification.
--- Zernio exposes a single webhook per profile/API key, so the secret lives at the
--- workspace level (not per-channel). Used by /api/webhooks/late to verify signatures.
+-- Add workspace-level webhook token. Repliz sends one token per workspace in
+-- the x-token header; /api/webhooks/repliz rejects requests that do not match.
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS webhook_secret TEXT;
 
 -- ============================================================
 -- MIGRATION 12: WEBHOOK EVENTS
 -- ============================================================
--- Idempotency ledger for inbound Zernio webhook deliveries. Zernio retries a
--- delivery with the same event id whenever our 200 doesn't arrive within its 5s
--- timeout; /api/webhooks/late claims the id here before processing so retries
--- and redeliveries never re-run a flow (which was double-sending DMs).
+-- Idempotency ledger for inbound Repliz webhook deliveries. Repliz does not
+-- retry, but a delivery can still be duplicated or arrive out of order, so the
+-- receiver claims the event id here before processing to avoid re-running a
+-- flow (which would double-send DMs).
 CREATE TABLE IF NOT EXISTS webhook_events (
   event_id TEXT PRIMARY KEY,
   received_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -1033,3 +1032,54 @@ ALTER TABLE channels DROP CONSTRAINT IF EXISTS channels_platform_check;
 ALTER TABLE channels ADD CONSTRAINT channels_platform_check
   CHECK (platform IN ('facebook', 'instagram', 'twitter', 'telegram', 'bluesky', 'reddit', 'whatsapp'));
 
+-- ============================================================
+-- MIGRATION 17: REPLIZ
+-- ============================================================
+-- Repliz is the messaging provider.
+--
+-- Fresh databases already get the repliz_* columns from 00001. The renames
+-- below only matter for a local database created before the switch, so they
+-- stay idempotent and are a no-op everywhere else.
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'workspaces' AND column_name = 'late_api_key_encrypted'
+  ) THEN
+    ALTER TABLE workspaces RENAME COLUMN late_api_key_encrypted TO repliz_access_key_encrypted;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'channels' AND column_name = 'late_account_id'
+  ) THEN
+    ALTER TABLE channels RENAME COLUMN late_account_id TO repliz_account_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'conversations' AND column_name = 'late_conversation_id'
+  ) THEN
+    ALTER TABLE conversations RENAME COLUMN late_conversation_id TO repliz_chat_id;
+  END IF;
+END $$;
+
+-- Repliz uses an Access Key + Secret Key pair (HTTP Basic auth).
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS repliz_secret_key_encrypted TEXT;
+
+-- `webhook_secret` now holds the token Repliz sends in the x-token header.
+COMMENT ON COLUMN workspaces.webhook_secret IS
+  'Repliz webhook token (x-token header). One per workspace.';
+
+-- Repliz can drive DMs for Instagram, Facebook, Telegram and TikTok. Older
+-- platform values stay allowed so existing channel rows are not invalidated.
+ALTER TABLE channels DROP CONSTRAINT IF EXISTS channels_platform_check;
+ALTER TABLE channels ADD CONSTRAINT channels_platform_check
+  CHECK (platform IN (
+    'facebook', 'instagram', 'tiktok', 'telegram',
+    'twitter', 'bluesky', 'reddit', 'whatsapp'
+  ));
+
+CREATE INDEX IF NOT EXISTS idx_conversations_repliz_chat_id
+  ON conversations(repliz_chat_id);
