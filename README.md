@@ -54,8 +54,8 @@ Without the required tier, channel connection and message delivery fail with a p
 1. **Clone the repo**
 
 ```bash
-git clone <your-repo-url>
-cd sahabatkreator
+git clone https://github.com/sahabatkreatorcom/sahabat-flow.git
+cd sahabat-flow
 npm install
 ```
 
@@ -157,7 +157,7 @@ Recv.  Engine     Chat           Processor
 ## Project Structure
 
 ```
-sahabatkreator/
+sahabat-flow/
 ├── app/
 │   ├── (auth)/             # Login, register pages
 │   ├── (dashboard)/        # Flows, inbox, contacts, sequences, settings
