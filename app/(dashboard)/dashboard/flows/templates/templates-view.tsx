@@ -15,6 +15,12 @@ import {
   Bot,
   Shuffle,
   BellOff,
+  Package,
+  Calendar,
+  Target,
+  Star,
+  ShoppingBag,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -35,6 +41,13 @@ const templateIcons: Record<FlowTemplateIcon, React.ElementType> = {
   bot: Bot,
   shuffle: Shuffle,
   bellOff: BellOff,
+  package: Package,
+  calendar: Calendar,
+  target: Target,
+  star: Star,
+  shoppingBag: ShoppingBag,
+  sparkles: Sparkles,
+  megaphone: Megaphone,
 };
 
 export function TemplatesView({ workspaceId }: { workspaceId: string }) {

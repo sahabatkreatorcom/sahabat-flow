@@ -157,6 +157,75 @@ describe("flow templates", () => {
     }
   });
 
+  it("only branches on fields the engine can resolve", () => {
+    // The old templates branched on `trigger_keyword`, a field executeCondition
+    // never reads, so the condition always took the `no` path. Only these
+    // prefixes plus a custom-field slug are resolvable.
+    const RESOLVABLE = /^(platform|is_subscribed|tag:.+|variable:.+)$/;
+
+    for (const template of FLOW_TEMPLATES) {
+      for (const node of template.nodes) {
+        if (node.type !== "condition") continue;
+        const conditions = node.data.conditions as Array<{ field: string }>;
+        expect(conditions.length, `${template.id}/${node.id}`).toBeGreaterThan(0);
+
+        for (const condition of conditions) {
+          const field = condition.field;
+          const looksLikeBareNamespace = ["tag", "variable", "custom_field"].includes(
+            field
+          );
+          expect(
+            looksLikeBareNamespace,
+            `${template.id}/${node.id}: bare "${field}" never matches`
+          ).toBe(false);
+          if (RESOLVABLE.test(field)) continue;
+          // Otherwise it must be a custom-field slug: lowercase, no spaces.
+          expect(field, `${template.id}/${node.id}: odd field "${field}"`).toMatch(
+            /^[a-z][a-z0-9_]*$/
+          );
+        }
+      }
+    }
+  });
+
+  it("carries the config each action type needs at runtime", () => {
+    const required: Record<string, string[]> = {
+      addTag: ["tagName"],
+      removeTag: ["tagName"],
+      setCustomField: ["fieldSlug", "value"],
+      smartDelay: ["timeout", "timeoutUnit"],
+      humanTakeover: [],
+      subscribe: [],
+      unsubscribe: [],
+      abSplit: ["paths"],
+      commentReply: ["text"],
+      privateReply: ["text"],
+    };
+
+    for (const template of FLOW_TEMPLATES) {
+      for (const node of template.nodes) {
+        if (node.type === "delay") {
+          expect(
+            typeof node.data.duration === "number" && node.data.duration > 0,
+            `${template.id}/${node.id}: bad delay`
+          ).toBe(true);
+          expect(["seconds", "minutes", "hours", "days"]).toContain(node.data.unit);
+          continue;
+        }
+        if (node.type !== "action") continue;
+
+        const actionType = String(node.data.actionType);
+        const keys = required[actionType] ?? [];
+        for (const key of keys) {
+          expect(
+            node.data[key],
+            `${template.id}/${node.id}: ${actionType} without ${key}`
+          ).toBeDefined();
+        }
+      }
+    }
+  });
+
   it("resolves condition branches through the engine helper", () => {
     for (const template of FLOW_TEMPLATES) {
       const nodes = asFlowNodes(template);

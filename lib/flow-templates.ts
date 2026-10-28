@@ -22,7 +22,14 @@ export type FlowTemplateIcon =
   | "gift"
   | "bot"
   | "shuffle"
-  | "bellOff";
+  | "bellOff"
+  | "package"
+  | "calendar"
+  | "target"
+  | "star"
+  | "shoppingBag"
+  | "sparkles"
+  | "megaphone";
 
 export interface FlowTemplateNode {
   id: string;
@@ -635,6 +642,1092 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       { id: "e2", source: "cond-1", target: "unsub-1", sourceHandle: "yes" },
       { id: "e3", source: "unsub-1", target: "msg-done" },
       { id: "e4", source: "cond-1", target: "msg-already", sourceHandle: "no" },
+    ],
+  },
+  {
+    id: "order-status",
+    name: "Order Status Lookup",
+    description:
+      'Someone asks "pesanan" / "resi": ask for the order number, wait, save it as a custom field, then answer with the status or hand off when the number is unknown.',
+    category: "Support",
+    icon: "package",
+    iconColor: "text-orange-600",
+    iconBg: "bg-orange-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: {
+          label: "Order keyword",
+          triggerType: "keyword",
+          keywords: [
+            { value: "pesanan", matchType: "contains" },
+            { value: "order", matchType: "contains" },
+            { value: "resi", matchType: "contains" },
+          ],
+        },
+      },
+      {
+        id: "msg-ask",
+        type: "sendMessage",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Ask order number",
+          messages: [
+            { text: "Boleh kirim nomor pesanan kamu? Contohnya *SK-10293*." },
+          ],
+        },
+      },
+      {
+        id: "wait-1",
+        type: "action",
+        position: { x: 260, y: 330 },
+        data: {
+          actionType: "smartDelay",
+          label: "Wait for order number",
+          timeout: 30,
+          timeoutUnit: "minutes",
+        },
+      },
+      {
+        id: "set-order",
+        type: "action",
+        position: { x: 260, y: 490 },
+        data: {
+          actionType: "setCustomField",
+          label: "Save order number",
+          fieldSlug: "last_order",
+          value: "{{message}}",
+        },
+      },
+      {
+        id: "cond-1",
+        type: "condition",
+        position: { x: 260, y: 650 },
+        data: {
+          label: "Order number known?",
+          logic: "and",
+          conditions: [{ field: "last_order", operator: "exists", value: "" }],
+        },
+      },
+      {
+        id: "msg-found",
+        type: "sendMessage",
+        position: { x: 40, y: 830 },
+        data: {
+          label: "Status answer",
+          messages: [
+            {
+              text: "Pesanan {{last_order}} ketemu ✅\n\nStatus: sedang dikemas di gudang.\nEstimasi kirim: besok sore.\n\nMau aku kabari lagi kalau resinya keluar?",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-1",
+        type: "action",
+        position: { x: 40, y: 990 },
+        data: {
+          actionType: "addTag",
+          label: "Tag order checked",
+          tagName: "cek-pesanan",
+        },
+      },
+      {
+        id: "msg-missing",
+        type: "sendMessage",
+        position: { x: 480, y: 830 },
+        data: {
+          label: "Not found",
+          messages: [
+            {
+              text: "Hmm, nomor itu belum ada di sistem kami. Aku sambungkan ke admin biar dicek manual ya 🙏",
+            },
+          ],
+        },
+      },
+      {
+        id: "handoff",
+        type: "action",
+        position: { x: 480, y: 990 },
+        data: {
+          actionType: "humanTakeover",
+          label: "Human takeover",
+          message: "Nomor pesanan tidak ditemukan",
+        },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "msg-ask" },
+      { id: "e2", source: "msg-ask", target: "wait-1" },
+      { id: "e3", source: "wait-1", target: "set-order" },
+      { id: "e4", source: "set-order", target: "cond-1" },
+      { id: "e5", source: "cond-1", target: "msg-found", sourceHandle: "yes" },
+      { id: "e6", source: "msg-found", target: "tag-1" },
+      { id: "e7", source: "cond-1", target: "msg-missing", sourceHandle: "no" },
+      { id: "e8", source: "msg-missing", target: "handoff" },
+    ],
+  },
+  {
+    id: "booking",
+    name: "Appointment Booking",
+    description:
+      "Service menu with quick replies, a nested condition for each service, then collect the preferred date, confirm it and tag the booking.",
+    category: "Sales",
+    icon: "calendar",
+    iconColor: "text-indigo-600",
+    iconBg: "bg-indigo-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: {
+          label: "Booking keyword",
+          triggerType: "keyword",
+          keywords: [
+            { value: "booking", matchType: "contains" },
+            { value: "jadwal", matchType: "contains" },
+            { value: "reservasi", matchType: "contains" },
+          ],
+        },
+      },
+      {
+        id: "msg-menu",
+        type: "sendMessage",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Service menu",
+          messages: [
+            {
+              text: "Halo! Mau booking layanan yang mana?",
+              quickReplies: [
+                { title: "Potong rambut", payload: "POTONG" },
+                { title: "Coloring", payload: "COLOR" },
+                { title: "Lainnya", payload: "LAIN" },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: "wait-1",
+        type: "action",
+        position: { x: 260, y: 330 },
+        data: {
+          actionType: "smartDelay",
+          label: "Wait for choice",
+          timeout: 15,
+          timeoutUnit: "minutes",
+        },
+      },
+      {
+        id: "cond-haircut",
+        type: "condition",
+        position: { x: 260, y: 490 },
+        data: {
+          label: "Haircut?",
+          logic: "and",
+          conditions: [
+            { field: "variable:message", operator: "contains", value: "potong" },
+          ],
+        },
+      },
+      {
+        id: "msg-haircut",
+        type: "sendMessage",
+        position: { x: 20, y: 670 },
+        data: {
+          label: "Haircut price",
+          messages: [
+            {
+              text: "Potong rambut Rp75rb, durasi sekitar 45 menit. Termasuk cuci dan styling ya.",
+            },
+          ],
+        },
+      },
+      {
+        id: "set-haircut",
+        type: "action",
+        position: { x: 20, y: 830 },
+        data: {
+          actionType: "setCustomField",
+          label: "Save service",
+          fieldSlug: "layanan",
+          value: "Potong rambut",
+        },
+      },
+      {
+        id: "cond-color",
+        type: "condition",
+        position: { x: 500, y: 670 },
+        data: {
+          label: "Coloring?",
+          logic: "and",
+          conditions: [
+            { field: "variable:message", operator: "contains", value: "color" },
+          ],
+        },
+      },
+      {
+        id: "msg-color",
+        type: "sendMessage",
+        position: { x: 380, y: 850 },
+        data: {
+          label: "Coloring price",
+          messages: [
+            {
+              text: "Coloring mulai Rp250rb, tergantung panjang rambut. Konsultasi warna gratis dulu.",
+            },
+          ],
+        },
+      },
+      {
+        id: "set-color",
+        type: "action",
+        position: { x: 380, y: 1010 },
+        data: {
+          actionType: "setCustomField",
+          label: "Save service",
+          fieldSlug: "layanan",
+          value: "Coloring",
+        },
+      },
+      {
+        id: "msg-other",
+        type: "sendMessage",
+        position: { x: 700, y: 850 },
+        data: {
+          label: "Other request",
+          messages: [
+            {
+              text: "Untuk layanan lain, aku teruskan ke admin kami ya biar lebih tepat.",
+            },
+          ],
+        },
+      },
+      {
+        id: "handoff",
+        type: "action",
+        position: { x: 700, y: 1010 },
+        data: {
+          actionType: "humanTakeover",
+          label: "Human takeover",
+          message: "Permintaan layanan lain",
+        },
+      },
+      {
+        id: "msg-ask-date",
+        type: "sendMessage",
+        position: { x: 200, y: 1170 },
+        data: {
+          label: "Ask date",
+          messages: [
+            {
+              text: "Mau datang kapan? Tulis tanggal dan jamnya ya, misalnya *Sabtu 10 pagi*.",
+            },
+          ],
+        },
+      },
+      {
+        id: "wait-date",
+        type: "action",
+        position: { x: 200, y: 1330 },
+        data: {
+          actionType: "smartDelay",
+          label: "Wait for date",
+          timeout: 60,
+          timeoutUnit: "minutes",
+        },
+      },
+      {
+        id: "set-date",
+        type: "action",
+        position: { x: 200, y: 1490 },
+        data: {
+          actionType: "setCustomField",
+          label: "Save date",
+          fieldSlug: "jadwal",
+          value: "{{message}}",
+        },
+      },
+      {
+        id: "msg-confirm",
+        type: "sendMessage",
+        position: { x: 200, y: 1650 },
+        data: {
+          label: "Confirm",
+          messages: [
+            {
+              text: "Siap! {{layanan}} pada {{jadwal}} sudah aku catat. Admin akan konfirmasi ketersediaannya sebentar lagi ya 🙌",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-1",
+        type: "action",
+        position: { x: 200, y: 1810 },
+        data: { actionType: "addTag", label: "Tag booking", tagName: "booking" },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "msg-menu" },
+      { id: "e2", source: "msg-menu", target: "wait-1" },
+      { id: "e3", source: "wait-1", target: "cond-haircut" },
+      {
+        id: "e4",
+        source: "cond-haircut",
+        target: "msg-haircut",
+        sourceHandle: "yes",
+      },
+      { id: "e5", source: "msg-haircut", target: "set-haircut" },
+      { id: "e6", source: "set-haircut", target: "msg-ask-date" },
+      { id: "e7", source: "cond-haircut", target: "cond-color", sourceHandle: "no" },
+      { id: "e8", source: "cond-color", target: "msg-color", sourceHandle: "yes" },
+      { id: "e9", source: "msg-color", target: "set-color" },
+      { id: "e10", source: "set-color", target: "msg-ask-date" },
+      { id: "e11", source: "cond-color", target: "msg-other", sourceHandle: "no" },
+      { id: "e12", source: "msg-other", target: "handoff" },
+      { id: "e13", source: "msg-ask-date", target: "wait-date" },
+      { id: "e14", source: "wait-date", target: "set-date" },
+      { id: "e15", source: "set-date", target: "msg-confirm" },
+      { id: "e16", source: "msg-confirm", target: "tag-1" },
+    ],
+  },
+  {
+    id: "product-quiz",
+    name: "Product Recommender Quiz",
+    description:
+      "One question with quick replies, a branch per budget, a different tag on each branch, then a shared closing message.",
+    category: "Sales",
+    icon: "target",
+    iconColor: "text-teal-600",
+    iconBg: "bg-teal-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: {
+          label: "Recommendation keyword",
+          triggerType: "keyword",
+          keywords: [
+            { value: "rekomendasi", matchType: "contains" },
+            { value: "bingung pilih", matchType: "contains" },
+            { value: "saran", matchType: "contains" },
+          ],
+        },
+      },
+      {
+        id: "msg-q1",
+        type: "sendMessage",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Budget question",
+          messages: [
+            {
+              text: "Biar rekomendasinya pas: budget kamu di kisaran mana?",
+              quickReplies: [
+                { title: "Di bawah 150rb", payload: "BUDGET" },
+                { title: "150rb ke atas", payload: "PREMIUM" },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: "wait-1",
+        type: "action",
+        position: { x: 260, y: 330 },
+        data: {
+          actionType: "smartDelay",
+          label: "Wait for answer",
+          timeout: 15,
+          timeoutUnit: "minutes",
+        },
+      },
+      {
+        id: "cond-budget",
+        type: "condition",
+        position: { x: 260, y: 490 },
+        data: {
+          label: "Budget tier?",
+          logic: "and",
+          conditions: [
+            { field: "variable:message", operator: "contains", value: "150" },
+          ],
+        },
+      },
+      {
+        id: "msg-budget",
+        type: "sendMessage",
+        position: { x: 40, y: 670 },
+        data: {
+          label: "Budget pick",
+          messages: [
+            {
+              text: "Untuk budget di bawah 150rb, aku sarankan *Paket Hemat* — cukup untuk 1 channel dan 500 kontak. Paling pas buat yang baru mulai.",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-budget",
+        type: "action",
+        position: { x: 40, y: 830 },
+        data: {
+          actionType: "addTag",
+          label: "Tag budget tier",
+          tagName: "minat-hemat",
+        },
+      },
+      {
+        id: "msg-premium",
+        type: "sendMessage",
+        position: { x: 480, y: 670 },
+        data: {
+          label: "Premium pick",
+          messages: [
+            {
+              text: "Kalau budgetnya lega, *Paket Pro* lebih worth it — semua channel, otomasi tanpa batas, dan prioritas support.",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-premium",
+        type: "action",
+        position: { x: 480, y: 830 },
+        data: {
+          actionType: "addTag",
+          label: "Tag premium tier",
+          tagName: "minat-pro",
+        },
+      },
+      {
+        id: "msg-cta",
+        type: "sendMessage",
+        position: { x: 260, y: 990 },
+        data: {
+          label: "Closing",
+          messages: [
+            {
+              text: "Mau aku bantu aktifkan sekarang, atau kirim detail perbandingannya dulu?",
+              quickReplies: [
+                { title: "Aktifkan sekarang", payload: "AKTIF" },
+                { title: "Kirim detail", payload: "DETAIL" },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "msg-q1" },
+      { id: "e2", source: "msg-q1", target: "wait-1" },
+      { id: "e3", source: "wait-1", target: "cond-budget" },
+      { id: "e4", source: "cond-budget", target: "msg-budget", sourceHandle: "yes" },
+      { id: "e5", source: "msg-budget", target: "tag-budget" },
+      { id: "e6", source: "tag-budget", target: "msg-cta" },
+      {
+        id: "e7",
+        source: "cond-budget",
+        target: "msg-premium",
+        sourceHandle: "no",
+      },
+      { id: "e8", source: "msg-premium", target: "tag-premium" },
+      { id: "e9", source: "tag-premium", target: "msg-cta" },
+    ],
+  },
+  {
+    id: "nps-survey",
+    name: "Feedback Score",
+    description:
+      "Ask for a 1–5 score and compare it numerically: happy customers get a thank-you and a promoter tag, unhappy ones get an apology and a human handoff.",
+    category: "Retention",
+    icon: "star",
+    iconColor: "text-yellow-600",
+    iconBg: "bg-yellow-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: {
+          label: "Feedback keyword",
+          triggerType: "keyword",
+          keywords: [
+            { value: "feedback", matchType: "contains" },
+            { value: "rating", matchType: "contains" },
+            { value: "ulasan", matchType: "contains" },
+          ],
+        },
+      },
+      {
+        id: "msg-ask",
+        type: "sendMessage",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Ask score",
+          messages: [
+            {
+              text: "Boleh nilai pengalaman kamu bareng kami? Balas angka 1–5 (5 paling puas).",
+            },
+          ],
+        },
+      },
+      {
+        id: "wait-1",
+        type: "action",
+        position: { x: 260, y: 330 },
+        data: {
+          actionType: "smartDelay",
+          label: "Wait for score",
+          timeout: 30,
+          timeoutUnit: "minutes",
+        },
+      },
+      {
+        id: "cond-score",
+        type: "condition",
+        position: { x: 260, y: 490 },
+        data: {
+          label: "Score above 3?",
+          logic: "and",
+          conditions: [{ field: "variable:message", operator: "gt", value: "3" }],
+        },
+      },
+      {
+        id: "msg-thanks",
+        type: "sendMessage",
+        position: { x: 40, y: 670 },
+        data: {
+          label: "Thank you",
+          messages: [
+            {
+              text: "Makasih banyak! Kalau sempat, boleh banget tulis ulasan singkat di postingan terakhir kami 🙏",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-promoter",
+        type: "action",
+        position: { x: 40, y: 830 },
+        data: {
+          actionType: "addTag",
+          label: "Tag promoter",
+          tagName: "promoter",
+        },
+      },
+      {
+        id: "msg-sorry",
+        type: "sendMessage",
+        position: { x: 480, y: 670 },
+        data: {
+          label: "Apology",
+          messages: [
+            {
+              text: "Maaf banget pengalamannya kurang enak. Aku sambungkan ke admin sekarang biar bisa dibantu langsung.",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-detractor",
+        type: "action",
+        position: { x: 480, y: 830 },
+        data: {
+          actionType: "addTag",
+          label: "Tag detractor",
+          tagName: "detractor",
+        },
+      },
+      {
+        id: "handoff",
+        type: "action",
+        position: { x: 480, y: 990 },
+        data: {
+          actionType: "humanTakeover",
+          label: "Human takeover",
+          message: "Skor feedback rendah",
+        },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "msg-ask" },
+      { id: "e2", source: "msg-ask", target: "wait-1" },
+      { id: "e3", source: "wait-1", target: "cond-score" },
+      { id: "e4", source: "cond-score", target: "msg-thanks", sourceHandle: "yes" },
+      { id: "e5", source: "msg-thanks", target: "tag-promoter" },
+      { id: "e6", source: "cond-score", target: "msg-sorry", sourceHandle: "no" },
+      { id: "e7", source: "msg-sorry", target: "tag-detractor" },
+      { id: "e8", source: "tag-detractor", target: "handoff" },
+    ],
+  },
+  {
+    id: "catalog-carousel",
+    name: "Carousel Catalog",
+    description:
+      "Send a three-card carousel with link buttons, then follow up a couple of hours later and tag everyone who asked for the catalog.",
+    category: "Sales",
+    icon: "shoppingBag",
+    iconColor: "text-purple-600",
+    iconBg: "bg-purple-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: {
+          label: "Catalog keyword",
+          triggerType: "keyword",
+          keywords: [
+            { value: "katalog", matchType: "contains" },
+            { value: "catalog", matchType: "contains" },
+            { value: "produk", matchType: "contains" },
+          ],
+        },
+      },
+      {
+        id: "msg-carousel",
+        type: "sendMessage",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Catalog carousel",
+          messages: [
+            {
+              text: "Ini yang paling sering dipesan 👇 Ketuk kartunya buat lihat detail.",
+              carousel: {
+                elements: [
+                  {
+                    title: "Paket Hemat",
+                    subtitle: "Rp99rb / bulan · 1 channel",
+                    buttons: [
+                      {
+                        type: "url",
+                        title: "Lihat detail",
+                        url: "https://sahabatkreator.com/paket/hemat",
+                      },
+                    ],
+                  },
+                  {
+                    title: "Paket Pro",
+                    subtitle: "Rp249rb / bulan · semua channel",
+                    buttons: [
+                      {
+                        type: "url",
+                        title: "Lihat detail",
+                        url: "https://sahabatkreator.com/paket/pro",
+                      },
+                    ],
+                  },
+                  {
+                    title: "Paket Bisnis",
+                    subtitle: "Rp599rb / bulan · tim & API",
+                    buttons: [
+                      {
+                        type: "url",
+                        title: "Lihat detail",
+                        url: "https://sahabatkreator.com/paket/bisnis",
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      {
+        id: "delay-1",
+        type: "delay",
+        position: { x: 260, y: 350 },
+        data: { label: "Wait 2 hours", duration: 2, unit: "hours" },
+      },
+      {
+        id: "msg-followup",
+        type: "sendMessage",
+        position: { x: 260, y: 510 },
+        data: {
+          label: "Follow-up",
+          messages: [
+            {
+              text: "Sudah sempat lihat katalognya? Kalau ada yang mau ditanyakan soal fitur atau pembayaran, tanya aja di sini.",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-1",
+        type: "action",
+        position: { x: 260, y: 670 },
+        data: {
+          actionType: "addTag",
+          label: "Tag catalog viewer",
+          tagName: "lihat-katalog",
+        },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "msg-carousel" },
+      { id: "e2", source: "msg-carousel", target: "delay-1" },
+      { id: "e3", source: "delay-1", target: "msg-followup" },
+      { id: "e4", source: "msg-followup", target: "tag-1" },
+    ],
+  },
+  {
+    id: "ai-triage",
+    name: "AI Triage with Escalation",
+    description:
+      "A default-reply flow: the AI drafts an answer without sending it, a condition checks whether it flagged the chat for a human, and only then is the reply sent.",
+    category: "Support",
+    icon: "bot",
+    iconColor: "text-sky-600",
+    iconBg: "bg-sky-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: { label: "Everything else", triggerType: "default", keywords: [] },
+      },
+      {
+        id: "ai-1",
+        type: "aiResponse",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Draft answer",
+          model: "openai/gpt-4o-mini",
+          temperature: 0.5,
+          maxTokens: 400,
+          contextMessages: 10,
+          sendDirectly: false,
+          systemPrompt:
+            "Kamu asisten customer service Sahabat Kreator. Jawab singkat dalam bahasa Indonesia (maksimal 3 kalimat) dan hanya soal produk, harga, serta cara koneksi channel. Kalau pertanyaannya butuh data akun, refund, atau tindakan manual, jangan menjawab: balas tepat dengan kata ADMIN saja.",
+        },
+      },
+      {
+        id: "cond-escalate",
+        type: "condition",
+        position: { x: 260, y: 350 },
+        data: {
+          label: "Needs a human?",
+          logic: "and",
+          conditions: [
+            { field: "variable:ai_response", operator: "contains", value: "ADMIN" },
+          ],
+        },
+      },
+      {
+        id: "msg-1",
+        type: "sendMessage",
+        position: { x: 40, y: 530 },
+        data: { label: "Send AI answer", messages: [{ text: "{{ai_response}}" }] },
+      },
+      {
+        id: "tag-ai",
+        type: "action",
+        position: { x: 40, y: 690 },
+        data: {
+          actionType: "addTag",
+          label: "Tag AI handled",
+          tagName: "ai-handled",
+        },
+      },
+      {
+        id: "handoff",
+        type: "action",
+        position: { x: 480, y: 530 },
+        data: {
+          actionType: "humanTakeover",
+          label: "Human takeover",
+          message: "AI flagged this conversation",
+        },
+      },
+      {
+        id: "tag-escalated",
+        type: "action",
+        position: { x: 480, y: 690 },
+        data: {
+          actionType: "addTag",
+          label: "Tag escalated",
+          tagName: "perlu-admin",
+        },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "ai-1" },
+      { id: "e2", source: "ai-1", target: "cond-escalate" },
+      { id: "e3", source: "cond-escalate", target: "msg-1", sourceHandle: "no" },
+      { id: "e4", source: "msg-1", target: "tag-ai" },
+      { id: "e5", source: "cond-escalate", target: "handoff", sourceHandle: "yes" },
+      { id: "e6", source: "handoff", target: "tag-escalated" },
+    ],
+  },
+  {
+    id: "vip-router",
+    name: "VIP Router",
+    description:
+      'A "menu" keyword that routes on a contact tag: VIPs get a priority line, everyone else gets the normal menu. The only template that branches on tags.',
+    category: "Support",
+    icon: "sparkles",
+    iconColor: "text-amber-600",
+    iconBg: "bg-amber-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: {
+          label: "Menu keyword",
+          triggerType: "keyword",
+          keywords: [
+            { value: "menu", matchType: "exact" },
+            { value: "bantuan", matchType: "contains" },
+          ],
+        },
+      },
+      {
+        id: "msg-menu",
+        type: "sendMessage",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Menu",
+          messages: [
+            {
+              text: "Silakan pilih:",
+              buttons: [
+                { type: "postback", title: "Cek pesanan", payload: "PESANAN" },
+                { type: "postback", title: "Bicara dengan admin", payload: "ADMIN" },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: "wait-1",
+        type: "action",
+        position: { x: 260, y: 330 },
+        data: {
+          actionType: "smartDelay",
+          label: "Wait for choice",
+          timeout: 15,
+          timeoutUnit: "minutes",
+        },
+      },
+      {
+        id: "cond-vip",
+        type: "condition",
+        position: { x: 260, y: 490 },
+        data: {
+          label: "Is VIP?",
+          logic: "and",
+          conditions: [{ field: "tag:vip", operator: "equals", value: "true" }],
+        },
+      },
+      {
+        id: "msg-vip",
+        type: "sendMessage",
+        position: { x: 40, y: 670 },
+        data: {
+          label: "VIP line",
+          messages: [
+            {
+              text: "Hai! Karena kamu pelanggan VIP, chat ini aku tandai prioritas — admin balas lebih dulu ya ✨",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-vip",
+        type: "action",
+        position: { x: 40, y: 830 },
+        data: {
+          actionType: "addTag",
+          label: "Tag priority",
+          tagName: "prioritas",
+        },
+      },
+      {
+        id: "msg-normal",
+        type: "sendMessage",
+        position: { x: 480, y: 670 },
+        data: {
+          label: "Normal menu",
+          messages: [
+            {
+              text: "Oke! Ketik *pesanan* kalau mau cek kiriman, atau *admin* kalau mau bicara dengan tim kami.",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-normal",
+        type: "action",
+        position: { x: 480, y: 830 },
+        data: {
+          actionType: "addTag",
+          label: "Tag menu used",
+          tagName: "pakai-menu",
+        },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "msg-menu" },
+      { id: "e2", source: "msg-menu", target: "wait-1" },
+      { id: "e3", source: "wait-1", target: "cond-vip" },
+      { id: "e4", source: "cond-vip", target: "msg-vip", sourceHandle: "yes" },
+      { id: "e5", source: "msg-vip", target: "tag-vip" },
+      { id: "e6", source: "cond-vip", target: "msg-normal", sourceHandle: "no" },
+      { id: "e7", source: "msg-normal", target: "tag-normal" },
+    ],
+  },
+  {
+    id: "promo-optin",
+    name: "Promo Opt-in",
+    description:
+      "New followers who are not subscribed get an offer with a yes/no quick reply; saying yes subscribes them and sends the code. Already-subscribed people get the promo straight away.",
+    category: "Marketing",
+    icon: "megaphone",
+    iconColor: "text-lime-600",
+    iconBg: "bg-lime-100",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        position: { x: 260, y: 0 },
+        data: { label: "New follower", triggerType: "welcome", keywords: [] },
+      },
+      {
+        id: "cond-sub",
+        type: "condition",
+        position: { x: 260, y: 170 },
+        data: {
+          label: "Already subscribed?",
+          logic: "and",
+          conditions: [{ field: "is_subscribed", operator: "equals", value: "true" }],
+        },
+      },
+      {
+        id: "msg-promo",
+        type: "sendMessage",
+        position: { x: 40, y: 350 },
+        data: {
+          label: "Promo",
+          messages: [
+            {
+              text: "Promo bulan ini: diskon 30% untuk paket Pro, sampai akhir bulan. Mau aku bantu aktifkan?",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-promo",
+        type: "action",
+        position: { x: 40, y: 510 },
+        data: {
+          actionType: "addTag",
+          label: "Tag promo sent",
+          tagName: "promo-terkirim",
+        },
+      },
+      {
+        id: "msg-offer",
+        type: "sendMessage",
+        position: { x: 480, y: 350 },
+        data: {
+          label: "Ask permission",
+          messages: [
+            {
+              text: "Hai! Kami punya promo bulan ini (diskon 30%). Boleh aku kirim infonya?",
+              quickReplies: [
+                { title: "Boleh", payload: "MAU" },
+                { title: "Jangan dulu", payload: "NANTI" },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: "wait-1",
+        type: "action",
+        position: { x: 480, y: 510 },
+        data: {
+          actionType: "smartDelay",
+          label: "Wait for consent",
+          timeout: 30,
+          timeoutUnit: "minutes",
+        },
+      },
+      {
+        id: "cond-consent",
+        type: "condition",
+        position: { x: 480, y: 670 },
+        data: {
+          label: "Said yes?",
+          logic: "and",
+          conditions: [
+            { field: "variable:message", operator: "contains", value: "boleh" },
+          ],
+        },
+      },
+      {
+        id: "sub-1",
+        type: "action",
+        position: { x: 380, y: 850 },
+        data: { actionType: "subscribe", label: "Subscribe" },
+      },
+      {
+        id: "msg-welcome-promo",
+        type: "sendMessage",
+        position: { x: 380, y: 1010 },
+        data: {
+          label: "Promo after opt-in",
+          messages: [
+            {
+              text: "Siap, sudah aku daftarkan ✅\n\nIni kodenya: *SAHABAT30* — berlaku sampai akhir bulan, bisa dipakai di semua paket.",
+            },
+          ],
+        },
+      },
+      {
+        id: "tag-sub",
+        type: "action",
+        position: { x: 380, y: 1170 },
+        data: {
+          actionType: "addTag",
+          label: "Tag subscriber",
+          tagName: "subscriber",
+        },
+      },
+      {
+        id: "msg-later",
+        type: "sendMessage",
+        position: { x: 700, y: 850 },
+        data: {
+          label: "No thanks",
+          messages: [
+            {
+              text: "Oke, tidak aku kirim ya. Kalau nanti berubah pikiran, tinggal ketik *promo* 🙂",
+            },
+          ],
+        },
+      },
+    ],
+    edges: [
+      { id: "e1", source: "trigger-1", target: "cond-sub" },
+      { id: "e2", source: "cond-sub", target: "msg-promo", sourceHandle: "yes" },
+      { id: "e3", source: "msg-promo", target: "tag-promo" },
+      { id: "e4", source: "cond-sub", target: "msg-offer", sourceHandle: "no" },
+      { id: "e5", source: "msg-offer", target: "wait-1" },
+      { id: "e6", source: "wait-1", target: "cond-consent" },
+      { id: "e7", source: "cond-consent", target: "sub-1", sourceHandle: "yes" },
+      { id: "e8", source: "sub-1", target: "msg-welcome-promo" },
+      { id: "e9", source: "msg-welcome-promo", target: "tag-sub" },
+      { id: "e10", source: "cond-consent", target: "msg-later", sourceHandle: "no" },
     ],
   },
 ];
