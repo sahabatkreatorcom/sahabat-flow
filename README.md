@@ -101,6 +101,20 @@ Repliz delivers events to `POST /api/webhooks/repliz?workspace=<workspace-id>`. 
 
 Repliz does not retry deliveries, and events may arrive out of order, so the receiver records each delivery ID before processing and treats duplicates as no-ops.
 
+### Scheduled jobs
+
+Delayed flow steps, broadcasts and sequence steps are driven by two endpoints: `GET /api/cron/jobs` and `GET /api/cron/sequences`. Both want the `CRON_SECRET` value, either as `?key=<secret>` or as an `Authorization: Bearer <secret>` header, and both must be called roughly once a minute.
+
+Vercel Cron cannot do that on the Hobby plan — it only allows a daily schedule and rejects anything faster at deploy time — so this repo has no `vercel.json` and the schedule lives in `.github/workflows/cron.yml` instead:
+
+1. Push the repository to GitHub.
+2. Under **Settings → Secrets and variables → Actions**, add a secret `CRON_SECRET` with the same value the deployment uses.
+3. On the same page, add a variable `APP_URL` holding the deployed origin, for example `https://sahabatkreator.com`.
+
+The workflow then calls both endpoints every five minutes. That is the shortest interval GitHub supports, and its scheduler can drift under load, so for a tighter loop point an external cron at the same two URLs with the `Authorization` header — cron-job.org runs one-minute schedules on its free tier. Running both is safe: the handlers claim jobs with a compare-and-set, so overlapping callers cannot process the same job twice.
+
+On a Vercel Pro plan you can drop the workflow and put the `crons` array back in a `vercel.json`; Vercel sends the `Authorization: Bearer <CRON_SECRET>` header for you once the env var is set.
+
 ## Architecture
 
 ```
