@@ -11,269 +11,31 @@ import {
   Loader2,
   BookmarkPlus,
   ArrowLeft,
+  Gift,
+  Bot,
+  Shuffle,
+  BellOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  FLOW_TEMPLATES,
+  type FlowTemplate,
+  type FlowTemplateIcon,
+} from "@/lib/flow-templates";
 import Link from "next/link";
 
-// --- Template types ---
-
-interface TemplateNode {
-  id: string;
-  type: string;
-  position: { x: number; y: number };
-  data: Record<string, unknown>;
-}
-
-interface TemplateEdge {
-  id: string;
-  source: string;
-  target: string;
-  sourceHandle?: string;
-  targetHandle?: string;
-}
-
-interface FlowTemplate {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  icon: React.ElementType;
-  iconColor: string;
-  iconBg: string;
-  nodes: TemplateNode[];
-  edges: TemplateEdge[];
-}
-
-// --- Built-in templates ---
-
-const templates: FlowTemplate[] = [
-  {
-    id: "welcome-flow",
-    name: "Welcome Flow",
-    description:
-      "Greet new users with a welcome message, wait a minute, then send a follow-up to keep them engaged.",
-    category: "Onboarding",
-    icon: MessageSquare,
-    iconColor: "text-blue-600",
-    iconBg: "bg-blue-100",
-    nodes: [
-      {
-        id: "trigger-1",
-        type: "trigger",
-        position: { x: 250, y: 0 },
-        data: {
-          label: "Welcome Trigger",
-          triggerType: "welcome",
-          config: {},
-        },
-      },
-      {
-        id: "msg-1",
-        type: "sendMessage",
-        position: { x: 250, y: 150 },
-        data: {
-          label: "Greeting",
-          text: "Hey there! Welcome! We're glad to have you here. How can we help you today?",
-        },
-      },
-      {
-        id: "delay-1",
-        type: "delay",
-        position: { x: 250, y: 300 },
-        data: {
-          label: "Wait 1 minute",
-          duration: 60,
-          unit: "seconds",
-        },
-      },
-      {
-        id: "msg-2",
-        type: "sendMessage",
-        position: { x: 250, y: 450 },
-        data: {
-          label: "Follow-up",
-          text: "By the way, feel free to ask me anything. I'm here to help!",
-        },
-      },
-    ],
-    edges: [
-      { id: "e1", source: "trigger-1", target: "msg-1" },
-      { id: "e2", source: "msg-1", target: "delay-1" },
-      { id: "e3", source: "delay-1", target: "msg-2" },
-    ],
-  },
-  {
-    id: "faq-bot",
-    name: "FAQ Bot",
-    description:
-      'Respond to "help" or "faq" keywords by checking the message and routing to different answer branches.',
-    category: "Support",
-    icon: HelpCircle,
-    iconColor: "text-amber-600",
-    iconBg: "bg-amber-100",
-    nodes: [
-      {
-        id: "trigger-1",
-        type: "trigger",
-        position: { x: 250, y: 0 },
-        data: {
-          label: "FAQ Trigger",
-          triggerType: "keyword",
-          config: { keywords: ["help", "faq"] },
-        },
-      },
-      {
-        id: "condition-1",
-        type: "condition",
-        position: { x: 250, y: 150 },
-        data: {
-          label: "Check keyword",
-          conditions: [
-            {
-              id: "c1",
-              field: "trigger_keyword",
-              operator: "equals",
-              value: "help",
-            },
-          ],
-        },
-      },
-      {
-        id: "msg-help",
-        type: "sendMessage",
-        position: { x: 50, y: 350 },
-        data: {
-          label: "Help response",
-          text: "Here are some things I can help you with:\n- Pricing info\n- Account setup\n- Technical support\n\nJust type your question and I'll do my best!",
-        },
-      },
-      {
-        id: "msg-faq",
-        type: "sendMessage",
-        position: { x: 450, y: 350 },
-        data: {
-          label: "FAQ response",
-          text: "Here are our most frequently asked questions:\n\n1. How do I get started?\n2. What plans are available?\n3. How do I contact support?\n\nReply with a number for more details!",
-        },
-      },
-    ],
-    edges: [
-      { id: "e1", source: "trigger-1", target: "condition-1" },
-      {
-        id: "e2",
-        source: "condition-1",
-        target: "msg-help",
-        sourceHandle: "true",
-      },
-      {
-        id: "e3",
-        source: "condition-1",
-        target: "msg-faq",
-        sourceHandle: "false",
-      },
-    ],
-  },
-  {
-    id: "lead-capture",
-    name: "Lead Capture",
-    description:
-      "Collect lead information step by step: ask for name, wait for response, save it, then ask for email and tag the contact.",
-    category: "Marketing",
-    icon: UserPlus,
-    iconColor: "text-green-600",
-    iconBg: "bg-green-100",
-    nodes: [
-      {
-        id: "trigger-1",
-        type: "trigger",
-        position: { x: 250, y: 0 },
-        data: {
-          label: "Lead Trigger",
-          triggerType: "keyword",
-          config: { keywords: ["interested", "info", "pricing"] },
-        },
-      },
-      {
-        id: "msg-name",
-        type: "sendMessage",
-        position: { x: 250, y: 120 },
-        data: {
-          label: "Ask name",
-          text: "Great, I'd love to help! What's your name?",
-        },
-      },
-      {
-        id: "wait-name",
-        type: "smartDelay",
-        position: { x: 250, y: 240 },
-        data: {
-          label: "Wait for name",
-          waitForInput: true,
-          timeout: 300,
-        },
-      },
-      {
-        id: "set-name",
-        type: "setCustomField",
-        position: { x: 250, y: 360 },
-        data: {
-          label: "Save name",
-          fieldSlug: "name",
-          value: "{{last_message}}",
-        },
-      },
-      {
-        id: "msg-email",
-        type: "sendMessage",
-        position: { x: 250, y: 480 },
-        data: {
-          label: "Ask email",
-          text: "Thanks, {{name}}! What's your email address so we can send you more details?",
-        },
-      },
-      {
-        id: "wait-email",
-        type: "smartDelay",
-        position: { x: 250, y: 600 },
-        data: {
-          label: "Wait for email",
-          waitForInput: true,
-          timeout: 300,
-        },
-      },
-      {
-        id: "set-email",
-        type: "setCustomField",
-        position: { x: 250, y: 720 },
-        data: {
-          label: "Save email",
-          fieldSlug: "email",
-          value: "{{last_message}}",
-        },
-      },
-      {
-        id: "tag-lead",
-        type: "addTag",
-        position: { x: 250, y: 840 },
-        data: {
-          label: 'Add "lead" tag',
-          tagName: "lead",
-        },
-      },
-    ],
-    edges: [
-      { id: "e1", source: "trigger-1", target: "msg-name" },
-      { id: "e2", source: "msg-name", target: "wait-name" },
-      { id: "e3", source: "wait-name", target: "set-name" },
-      { id: "e4", source: "set-name", target: "msg-email" },
-      { id: "e5", source: "msg-email", target: "wait-email" },
-      { id: "e6", source: "wait-email", target: "set-email" },
-      { id: "e7", source: "set-email", target: "tag-lead" },
-    ],
-  },
-];
 
 // --- Component ---
+
+const templateIcons: Record<FlowTemplateIcon, React.ElementType> = {
+  message: MessageSquare,
+  help: HelpCircle,
+  userPlus: UserPlus,
+  gift: Gift,
+  bot: Bot,
+  shuffle: Shuffle,
+  bellOff: BellOff,
+};
 
 export function TemplatesView({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
@@ -344,9 +106,9 @@ export function TemplatesView({ workspaceId }: { workspaceId: string }) {
       {/* Template gallery */}
       <div className="flex-1 overflow-auto p-8">
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {templates.map((template) => {
+          {FLOW_TEMPLATES.map((template) => {
             const isCreating = creating === template.id;
-            const Icon = template.icon;
+            const Icon = templateIcons[template.icon];
             const nodeCount = template.nodes.length;
 
             return (
